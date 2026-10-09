@@ -61,6 +61,16 @@ uv run python scripts/install_smoke.py
 
 实际资源与浏览器检查的前提、命令和结果见 [P5 验收记录](docs/P5_ACCEPTANCE.md)。
 
+大建筑优化已实现：分块合批、全局透明排序与未变化透明几何复用、分帧剖切重建、增量后端缓存、独立缩略图和缓冲释放，保留每格状态与拾取身份。本机 Windows 11 / RTX 5060 Ti / Chrome 154 下，100,000 格混合建筑每帧调用从 **29,596 降至 243**，相机旋转帧间隔 P95 从 **183.4 ms 降至 16.8 ms**，约从 5–6 FPS 达到 60 FPS；105,102 格真实城堡裁片也达到约 60 FPS。10 万方块普通画布 DPR1/DPR2 各阶段 6 秒×3 次重复，真实建筑、专注宽视图与连续交互分别验证，完整数据、所有成功/失败和回退尝试见 [渲染优化实验记录](docs/RENDERING_OPTIMIZATION_LOG.md)。本机快速重测：
+
+```powershell
+.venv/Scripts/python.exe scripts/benchmark_rendering.py --label current --quick
+```
+
+基准使用独立端口与临时数据库、完整加载全部测试格，结果和截图保存在 `artifacts/performance/`。默认读取 `.local/cache` 的官方资源；测试场景由脚本确定性生成，可通过 `--asset` 增加同版本蓝图、`--project` 增加明确来源的渲染项目，详细参数和证据边界见实验记录。
+
+这些结果只代表记录中的机器与场景。首次导入仍需数秒，编辑或前后比较需等待完整网格；连续操作存在偶发约 50 ms 帧，严格像素对照仍未通过，差异主要在边缘。1,156,099 格完整城堡压力探索的全景约 30 FPS，未达到 60 FPS。用户链接别墅原件是 v5 / DataVersion 3578，本轮仅测试完整状态投影，不能据此宣称原生导入或 NBT 导出无损。
+
 ## 文档
 
 | 文档 | 用途 |
@@ -72,6 +82,7 @@ uv run python scripts/install_smoke.py
 | [快速开始](docs/QUICKSTART.md) | 本机启动、全新安装、GUI 流程及验证 |
 | [架构](docs/ARCHITECTURE.md) | Python 领域/应用/适配器/接口与前端边界 |
 | [性能计划](docs/PERFORMANCE_PLAN.md) | 渲染瓶颈、优化顺序及客户端方案 |
+| [渲染优化实验记录](docs/RENDERING_OPTIMIZATION_LOG.md) | 每次优化、失败/回退、真实大建筑基准与100,000格验收 |
 | [显示修复](docs/RENDERING_FIXES.md) | 特殊方块、透明材质及 MC 版本边界 |
 | [多版本计划](docs/VERSION_SUPPORT.md) | 当前支持范围和新增版本的配套要求 |
 | [工程规范](docs/ENGINEERING.md) | 类型、锁文件、事务恢复、检查与发布 |

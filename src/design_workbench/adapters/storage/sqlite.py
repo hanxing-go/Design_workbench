@@ -8,6 +8,7 @@ import zlib
 from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,33 @@ def metadata(scene: Scene) -> dict[str, Any]:
         "bounds": scene.bounds.as_dict(),
         "protected": sorted(scene.protected),
     }
+
+
+@dataclass(slots=True)
+class RenderRead:
+    data_version: int
+    metadata: dict[str, Any]
+    chunks: dict[Point, bytes]
+    source: bytes | None
+    history: dict[str, Any]
+
+
+def decode_chunk(key: Point, value: bytes) -> dict[Point, Cell]:
+    try:
+        payload = decode(value)
+        palette = [
+            BlockState.make(state["name"], state["properties"]) for state in payload["palette"]
+        ]
+        return {
+            (
+                key[0] * 16 + index % 16,
+                key[1] * 16 + index // 256,
+                key[2] * 16 + index // 16 % 16,
+            ): Cell(palette[state], group, region)
+            for index, state, group, region in payload["cells"]
+        }
+    except (zlib.error, UnicodeDecodeError, ValueError, KeyError, TypeError, IndexError) as error:
+        raise WorkbenchError("DATABASE_CORRUPT", f"项目分块 {key} 损坏或格式不受支持。") from error
 
 
 class SqliteStore:
@@ -155,18 +183,57 @@ class SqliteStore:
     def _cells(connection: sqlite3.Connection) -> dict[Point, Cell]:
         cells: dict[Point, Cell] = {}
         for row in connection.execute("SELECT x,y,z,payload FROM chunks"):
-            payload = decode(row["payload"])
-            palette = [
-                BlockState.make(state["name"], state["properties"]) for state in payload["palette"]
-            ]
-            for index, state, group, region in payload["cells"]:
-                point = (
-                    row["x"] * 16 + index % 16,
-                    row["y"] * 16 + index // 256,
-                    row["z"] * 16 + index // 16 % 16,
-                )
-                cells[point] = Cell(palette[state], group, region)
+            cells.update(decode_chunk((row["x"], row["y"], row["z"]), row["payload"]))
         return cells
+
+    def open_render_reader(self) -> sqlite3.Connection:
+        """A persistent read-only observer; callers serialize access and close it."""
+        connection = sqlite3.connect(
+            self.path.as_uri() + "?mode=ro",
+            uri=True,
+            timeout=self.timeout,
+            isolation_level=None,
+            check_same_thread=False,
+        )
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def read_render_data(
+        self, connection: sqlite3.Connection, previous_version: int | None
+    ) -> RenderRead | None:
+        """Read a coherent projection without decompressing any cells.
+
+        data_version is meaningful only on this same long-lived connection. It
+        detects all other connections' commits, including writes that do not
+        advance scene/chunk revisions. Unchanged requests read no chunk BLOBs.
+        """
+        try:
+            connection.execute("BEGIN")
+            version = int(connection.execute("PRAGMA data_version").fetchone()[0])
+            if previous_version == version:
+                return None
+            data = self._meta(connection)
+            chunks = {
+                (row["x"], row["y"], row["z"]): bytes(row["payload"])
+                for row in connection.execute("SELECT x,y,z,payload FROM chunks")
+            }
+            row = connection.execute(
+                "SELECT payload FROM attachments WHERE key='litematic'"
+            ).fetchone()
+            return RenderRead(
+                version,
+                data,
+                chunks,
+                bytes(row[0]) if row else None,
+                self._history_info(connection, data),
+            )
+        except sqlite3.OperationalError as error:
+            code = "DATABASE_BUSY" if "locked" in str(error) else "DATABASE_ERROR"
+            raise WorkbenchError(code, str(error)) from error
+        except sqlite3.DatabaseError as error:
+            raise WorkbenchError("DATABASE_CORRUPT", "项目数据库损坏或格式不受支持。") from error
+        finally:
+            connection.rollback()
 
     def load(self) -> Scene:
         with self.connection() as connection:
@@ -209,11 +276,26 @@ class SqliteStore:
         keys: set[Point],
         revision: int,
     ) -> None:
+        if not keys:
+            return
         grouped: dict[Point, list[tuple[Point, Cell]]] = defaultdict(list)
-        for point, cell in cells.items():
-            key = chunk_key(point)
-            if key in keys:
-                grouped[key].append((point, cell))
+        if len(keys) * 16**3 <= len(cells):
+            # A bounded spatial lookup avoids scanning a 100k-cell scene for a
+            # single edited chunk. Large/sparse edits use the original scan.
+            for key in keys:
+                x0, y0, z0 = (value * 16 for value in key)
+                for x in range(x0, x0 + 16):
+                    for y in range(y0, y0 + 16):
+                        for z in range(z0, z0 + 16):
+                            point = (x, y, z)
+                            cell = cells.get(point)
+                            if cell is not None:
+                                grouped[key].append((point, cell))
+        else:
+            for point, cell in cells.items():
+                key = chunk_key(point)
+                if key in keys:
+                    grouped[key].append((point, cell))
         for key in keys:
             if not grouped[key]:
                 connection.execute("DELETE FROM chunks WHERE x=? AND y=? AND z=?", key)
@@ -388,18 +470,20 @@ class SqliteStore:
     def history_info(self) -> dict[str, Any]:
         with self.connection() as connection:
             data = self._meta(connection)
-            count = connection.execute("SELECT COUNT(*) FROM commands").fetchone()[0]
-            events = [
-                dict(row)
-                for row in connection.execute(
-                    "SELECT * FROM events ORDER BY revision DESC LIMIT 30"
-                )
-            ]
-            return {
-                "undo_available": data["cursor"],
-                "redo_available": count - data["cursor"],
-                "events": events,
-            }
+            return self._history_info(connection, data)
+
+    @staticmethod
+    def _history_info(connection: sqlite3.Connection, data: dict[str, Any]) -> dict[str, Any]:
+        count = connection.execute("SELECT COUNT(*) FROM commands").fetchone()[0]
+        events = [
+            dict(row)
+            for row in connection.execute("SELECT * FROM events ORDER BY revision DESC LIMIT 30")
+        ]
+        return {
+            "undo_available": data["cursor"],
+            "redo_available": count - data["cursor"],
+            "events": events,
+        }
 
     def chunk_versions(self) -> dict[str, str]:
         with self.connection() as connection:

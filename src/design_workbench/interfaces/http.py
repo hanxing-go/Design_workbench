@@ -3,6 +3,8 @@ import logging
 import re
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -11,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from design_workbench.adapters.rendering.packets import render_packet
+from design_workbench.adapters.rendering.cache import RenderCache
 from design_workbench.adapters.storage.sqlite import SqliteStore
 from design_workbench.application.contracts import (
     CreateRequest,
@@ -32,8 +34,18 @@ LOGGER = logging.getLogger("design_workbench.http")
 
 def create_app(settings: Settings) -> FastAPI:
     workbench = Workbench(settings)
-    app = FastAPI(title="Design Workbench", version="0.1.0")
+    render_cache = RenderCache()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            render_cache.close()
+
+    app = FastAPI(title="Design Workbench", version="0.1.0", lifespan=lifespan)
     app.state.workbench = workbench
+    app.state.render_cache = render_cache
     projects = settings.data_dir / "projects"
     projects.mkdir(parents=True, exist_ok=True)
 
@@ -146,7 +158,12 @@ def create_app(settings: Settings) -> FastAPI:
         items, errors = [], []
         for path in sorted(projects.glob("*.dwbench")):
             try:
-                items.append({"project_id": path.stem, **workbench.service(path).summary()})
+                items.append(
+                    {
+                        "project_id": path.stem,
+                        **render_cache.summary(path, settings.database_timeout),
+                    }
+                )
             except WorkbenchError as error:
                 errors.append({"project_id": path.stem, "error": error.as_dict()})
         return {"items": items, "errors": errors}
@@ -161,11 +178,14 @@ def create_app(settings: Settings) -> FastAPI:
             workbench.catalog.data_version,
             Bounds(request.bounds.low, request.bounds.high),
         )
-        return {"project_id": identifier, **workbench.service(project_path(identifier)).summary()}
+        return {
+            "project_id": identifier,
+            **render_cache.summary(project_path(identifier), settings.database_timeout),
+        }
 
     @app.get("/api/projects/{identifier}")
     def summary(identifier: str) -> dict[str, Any]:
-        return workbench.service(project_path(identifier)).summary()
+        return render_cache.summary(project_path(identifier), settings.database_timeout)
 
     @app.patch("/api/projects/{identifier}")
     def rename_project(identifier: str, request: RenameRequest) -> dict[str, Any]:
@@ -217,10 +237,12 @@ def create_app(settings: Settings) -> FastAPI:
     def render(identifier: str, known: dict[str, str] | None = None) -> dict[str, Any]:
         if workbench.pack is None:
             raise WorkbenchError("RESOURCES_NOT_READY", "素材尚未配置。")
-        repository = workbench.service(project_path(identifier)).repository
-        scene = repository.load()
-        return render_packet(
-            scene, workbench.catalog, workbench.pack, known, repository.attachment()
+        return render_cache.render(
+            project_path(identifier),
+            workbench.catalog,
+            workbench.pack,
+            known,
+            settings.database_timeout,
         )
 
     @app.get("/api/projects/{identifier}/consistency")

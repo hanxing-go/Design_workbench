@@ -161,6 +161,7 @@ class Editor:
             raise WorkbenchError("OPERATION_LIMIT", "编辑操作数量超出预算。")
         cells = dict(scene.cells)
         touched = 0
+        written: set[Point] = set()
 
         def put(
             point: Point, state: BlockState, group: str = "main", region: str | None = None
@@ -182,6 +183,7 @@ class Editor:
                 cells.pop(point, None)
             else:
                 cells[point] = Cell(normalized, group, region or (old.region if old else "design"))
+            written.add(point)
             touched += 1
             if touched > self.limits.max_cells or len(cells) > self.limits.max_blocks:
                 raise WorkbenchError("EDIT_LIMIT", "修改超出方块/操作预算。")
@@ -390,7 +392,7 @@ class Editor:
                 raise WorkbenchError("UNKNOWN_OPERATION", f"未支持的编辑操作：{kind}。", "op")
         changes = [
             (point, scene.cells.get(point), cells.get(point))
-            for point in sorted(scene.cells.keys() | cells.keys())
+            for point in sorted(written)
             if scene.cells.get(point) != cells.get(point)
         ]
         return EditPlan(cells, changes, touched)

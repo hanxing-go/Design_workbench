@@ -11,7 +11,7 @@
 | P1.1 独立工程 | Git、pyproject.toml、uv.lock、src 布局、GUI extra | 锁定环境及干净 wheel 安装；无旧 JS 运行依赖 |
 | P1.2 依赖与目录 | dw/domain、application、adapters、interfaces；config.py | tests/unit/test_foundation.py 的依赖方向与便携路径检查 |
 | P1.3 配置/错误/日志/CLI | dw/config.py、logging.py、domain/errors.py、interfaces/cli.py | CLI 帮助/info、配置优先级、HTTP 请求关联与冲突错误 |
-| P1.4 持续检查 | Ruff、strict mypy、pytest、前端检查、.github/workflows/check.yml | Windows 与 WSL 本地检查；远端 CI 只配置未运行 |
+| P1.4 持续检查 | Ruff、strict mypy、pytest、前端检查、.github/workflows/check.yml | Windows 与 WSL 本地检查；GitHub Actions 的 Windows/Linux 与浏览器任务全部通过 |
 | P1.5 可安装/路径独立 | wheel 含注册表及 static；scripts/install_smoke.py | 源码目录外的临时 venv：CLI、创建/编辑/导出、静态文件检查 |
 | P2.1 注册材料 | dw/data/registry-1.20.1.json、resources/catalog.py | tests/unit/test_catalog.py；1,003 块、24,135 状态、分页/合法性/中文 |
 | P2.2 资源管理 | resources/acquire.py、pack.py、manifest 与相对 current 指针 | 官方哈希与版本核对；资源复制到独立路径后的实际模型验证 |
@@ -40,7 +40,9 @@
 
 Windows 11，Python 3.12.7，Node.js 24.14.0，Chrome 154.0.8037.98。Windows pytest 25 项通过，其中 1 项真实浏览器、2 项实际资源测试。测试依赖 Starlette 提示未来迁移 httpx2 的弃用警告，不影响通过结果。
 
-WSL Ubuntu 22.04，受管理 Python 3.12.15：22 项核心测试通过，浏览器/资源 3 项不在 Linux 本地运行；mypy、Ruff、构建和干净 wheel 安装通过。Linux 浏览器由 CI 配置承接，尚无运行证据。远端 GitHub Actions 尚未执行。
+WSL Ubuntu 22.04，受管理 Python 3.12.15：22 项核心测试通过，浏览器/资源 3 项不在 WSL 本地运行；mypy、Ruff、构建和干净 wheel 安装通过。公开仓库发布后，GitHub Actions 的 Windows/Linux 核心与安装任务、Ubuntu 实际官方资源与 Chromium 浏览器任务全部通过。
+
+公开仓库：<https://github.com/hanxing-go/Design_workbench>。初始交付标签 v0.1.0 指向 27ba14c625b854990c1dc0263969e692a891900c；首次远端 [Check 运行](https://github.com/hanxing-go/Design_workbench/actions/runs/37935155062) 对该提交验收成功。本次新增远端结果作为后续文档提交保存，不移动已有标签。
 
 strict mypy 检查 27 个 Python 源文件通过，Ruff lint/format 通过；前端 TypeScript、Prettier、Vite 构建通过。Vite 对约 534 KB 的主包给出体积建议，当前无运行失败；后续可按实际需要分包。
 

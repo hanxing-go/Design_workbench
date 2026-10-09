@@ -6,6 +6,8 @@
 
 公开仓库：<https://github.com/hanxing-go/Design_workbench>。`v0.1.0` 保存 P1–P5 的交付版本，开发与版本管理约定见 [贡献指南](CONTRIBUTING.md)。
 
+[![Check](https://github.com/hanxing-go/Design_workbench/actions/workflows/check.yml/badge.svg)](https://github.com/hanxing-go/Design_workbench/actions/workflows/check.yml)
+
 ## 直接启动本机项目
 
 项目位置：`D:\Study\program\Design_workbench`。依赖和官方素材已配置，PowerShell 中运行：
@@ -80,6 +82,6 @@ uv run python scripts/install_smoke.py
 
 蓝图兼容范围是版本一致的 Litematica v6、不重叠区域。实体/NBT 关联格受到编辑保护；存在歧义的区域或导出会明确失败。已验证独立读取器，尚未执行 Minecraft/Litematica 客户端内验收。
 
-Windows 已验证真实浏览器工作流；Linux 已在 WSL Ubuntu 中验证核心检查及干净环境安装。GitHub Actions 已配置，尚无远端执行记录。
+Windows 已验证真实浏览器工作流；Linux 已在 WSL Ubuntu 中验证核心检查及干净环境安装。[首次 GitHub Actions](https://github.com/hanxing-go/Design_workbench/actions/runs/37935155062) 的 Windows/Linux 核心与安装、Linux 官方资源与真实浏览器任务全部通过。
 
 源码采用 MIT 许可；Minecraft 素材和第三方建筑不受本项目 MIT 许可覆盖。用户项目、游戏资源、日志、导出及本地验收产物留在 `.local/` 和 `artifacts/`，不提交到源码仓库。

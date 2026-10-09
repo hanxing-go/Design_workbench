@@ -63,7 +63,7 @@
 
 ## 平台支持
 
-本机 Windows 11、Python 3.12.7、Chrome 154.0.8037.98 已运行浏览器验收。WSL Ubuntu 22.04、Python 3.12.15 已运行核心/类型/lint/构建和安装验收；Linux 浏览器任务已配置在 CI，但尚无执行结果。
+本机 Windows 11、Python 3.12.7、Chrome 154.0.8037.98 已运行浏览器验收。WSL Ubuntu 22.04、Python 3.12.15 已运行核心/类型/lint/构建和安装验收；GitHub Actions Ubuntu 另通过实际官方资源与 Playwright Chromium 浏览器验收，Windows/Linux 核心与安装任务也通过。远端运行记录见 [P5 验收记录](P5_ACCEPTANCE.md)。
 
 36,094 格教堂满足本机 P4 记录的 P5 性能门槛。250,000 格预算、100,000 格扩展目标不代表已经通过该规模的流畅度验证。没有低配机器性能承诺。
 

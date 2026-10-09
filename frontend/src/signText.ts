@@ -75,6 +75,7 @@ export function addSignText(group: THREE.Group, model: Model, cell: RenderCell) 
 export function disposeChunk(group: THREE.Group) {
   group.traverse((object) => {
     if (object instanceof THREE.InstancedMesh) object.dispose();
+    if (object instanceof THREE.Mesh && object.userData.chunkGeometry) object.geometry.dispose();
     if (object instanceof THREE.Mesh && object.userData.signText) {
       object.geometry.dispose();
       const material = object.material as THREE.MeshBasicMaterial;

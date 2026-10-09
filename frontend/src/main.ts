@@ -2,7 +2,6 @@ import './style.css';
 import shell from './shell.html?raw';
 import type { Material, Model, Packet, Point, Selection, State, Summary } from './types';
 import { Viewer } from './viewer';
-import { disposeChunk } from './signText';
 import { LayerPlayer } from './layerPlayer';
 
 const root = document.querySelector<HTMLDivElement>('#app')!;
@@ -107,15 +106,10 @@ async function refresh(full = false) {
   const start = performance.now();
   const packet = await api<Packet>(endpoint('/render'), full ? {} : viewer.versions);
   if (full) {
-    viewer.chunks.clear();
-    for (const group of viewer.meshes.values()) {
-      viewer.scene.remove(group);
-      disposeChunk(group);
-    }
-    viewer.meshes.clear();
-    viewer.versions = {};
+    viewer.clearScene();
   }
   viewer.update(packet);
+  await viewer.whenReady();
   latest = packet;
   summary = await api<Summary & { events: { revision: number; kind: string; changed: number }[] }>(
     endpoint(),
@@ -600,6 +594,7 @@ el<HTMLSelectElement>('compare').onchange = () =>
         ...previous,
         removed_chunks: Object.keys(viewer.versions).filter((id) => !previous!.chunks[id]),
       });
+      await viewer.whenReady();
       layerPlayer.update(previous.summary);
       message(`查看修改前 r${previous.revision}`);
     } else {

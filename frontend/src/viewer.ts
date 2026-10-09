@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergedChunk, triangleOwner, type GeometryPart } from './chunkGeometry';
 import { addSignText, disposeChunk } from './signText';
+import { Transparency, type TextPart } from './transparency';
 import type { Atlas, Face, Model, Packet, Point, RenderCell, Selection } from './types';
 
 type Hit = { position: Point; normal: Point; group: string; protected: boolean; ground: boolean };
@@ -31,6 +33,20 @@ export class Viewer {
   onHit: (hit: Hit | null, event: PointerEvent) => void = () => {};
   private drawHandle = 0;
   private geometryCache = new Map<string, THREE.BufferGeometry>();
+  private occupancy = new Map<string, RenderCell>();
+  private transparentParts = new Map<string, GeometryPart[]>();
+  private transparency: Transparency | null = null;
+  private sortedMaterial!: THREE.MeshLambertMaterial;
+  private resourceHash = '';
+  private thumbnailRenderer: THREE.WebGLRenderer | null = null;
+  private thumbnails = new Map<string, string>();
+  pendingBuilds = new Set<string>();
+  building = false;
+  private buildPromise: Promise<void> = Promise.resolve();
+  private textureReady: Promise<void> = Promise.resolve();
+  private chunkGenerations = new Map<string, number>();
+  private builtKeys = new Map<string, string>();
+  private transparencyDirty = false;
   private resizeObserver: ResizeObserver;
 
   constructor(readonly container: HTMLElement) {
@@ -78,11 +94,7 @@ export class Viewer {
   }
 
   async initializeTexture() {
-    this.texture = await new THREE.TextureLoader().loadAsync('/api/atlas.png');
-    this.texture.magFilter = THREE.NearestFilter;
-    this.texture.minFilter = THREE.NearestFilter;
-    this.texture.generateMipmaps = false;
-    this.texture.colorSpace = THREE.SRGBColorSpace;
+    this.texture = await this.loadTexture('/api/atlas.png');
     this.material = new THREE.MeshLambertMaterial({
       map: this.texture,
       alphaTest: 0.1,
@@ -97,11 +109,40 @@ export class Viewer {
       alphaTest: 0.01,
       depthWrite: false,
     });
+    this.sortedMaterial = this.translucent.clone();
+    this.sortedMaterial.forceSinglePass = true;
     this.emissive = new THREE.MeshBasicMaterial({
       map: this.texture,
       side: THREE.DoubleSide,
       vertexColors: true,
     });
+  }
+
+  private async loadTexture(url: string): Promise<THREE.Texture> {
+    const texture = await new THREE.TextureLoader().loadAsync(url);
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }
+
+  private async refreshTexture(hash: string) {
+    const texture = await this.loadTexture(
+      '/api/atlas.png?resource_hash=' + encodeURIComponent(hash),
+    );
+    // A newer resource packet can arrive before the image finishes loading.
+    if (hash !== this.resourceHash) {
+      texture.dispose();
+      return;
+    }
+    const previous = this.texture;
+    this.texture = texture;
+    for (const material of [this.material, this.translucent, this.sortedMaterial, this.emissive]) {
+      material.map = texture;
+      material.needsUpdate = true;
+    }
+    previous.dispose();
   }
 
   materialFor(model: Model): THREE.Material {
@@ -125,21 +166,38 @@ export class Viewer {
     this.drawHandle = requestAnimationFrame(() => {
       this.drawHandle = 0;
       const start = performance.now();
-      this.renderer.render(this.scene, this.camera);
+      this.drawNow();
       this.renderMs = performance.now() - start;
       this.frames++;
     });
   }
   drawNow() {
+    this.camera.updateMatrixWorld();
+    this.transparency?.sort(this.camera);
     this.renderer.render(this.scene, this.camera);
   }
 
   update(packet: Packet) {
+    if (packet.resource_hash && this.resourceHash !== packet.resource_hash) {
+      this.clearScene();
+      this.resourceHash = packet.resource_hash;
+      this.thumbnails.clear();
+      this.clearGhosts();
+      this.textureReady = this.refreshTexture(this.resourceHash);
+    }
     const changed = new Set<string>([...Object.keys(packet.chunks), ...packet.removed_chunks]);
     for (const [id, model] of Object.entries(packet.models)) this.models.set(id, model);
     this.atlas = packet.atlas;
-    for (const [id, cells] of Object.entries(packet.chunks)) this.chunks.set(id, cells);
-    for (const id of packet.removed_chunks) this.chunks.delete(id);
+    for (const id of changed) {
+      this.chunkGenerations.set(id, (this.chunkGenerations.get(id) ?? 0) + 1);
+      for (const cell of this.chunks.get(id) ?? [])
+        this.occupancy.delete(key([cell[0], cell[1], cell[2]]));
+      const cells = packet.chunks[id];
+      if (cells) {
+        this.chunks.set(id, cells);
+        for (const cell of cells) this.occupancy.set(key([cell[0], cell[1], cell[2]]), cell);
+      } else this.chunks.delete(id);
+    }
     this.versions = packet.chunk_versions;
     for (const id of [...changed]) {
       const p = id.split(',').map(Number);
@@ -153,12 +211,7 @@ export class Viewer {
       ])
         changed.add(key(p.map((v, i) => v + d[i])));
     }
-    const occupied = this.occupied();
-    this.rebuilt = 0;
-    for (const id of changed) {
-      this.rebuild(id, occupied);
-      this.rebuilt++;
-    }
+    this.scheduleBuild(changed);
     if (!this.fitted && packet.summary.occupied_bounds) {
       this.fit(packet.summary.occupied_bounds);
       this.fitted = true;
@@ -167,11 +220,67 @@ export class Viewer {
   }
 
   occupied() {
-    const result = new Map<string, RenderCell>();
-    for (const cells of this.chunks.values())
-      for (const cell of cells)
-        if (cell[1] <= this.layer) result.set(key([cell[0], cell[1], cell[2]]), cell);
-    return result;
+    return this.occupancy;
+  }
+
+  clearScene() {
+    this.pendingBuilds.clear();
+    this.chunkGenerations.clear();
+    this.builtKeys.clear();
+    for (const group of this.meshes.values()) {
+      this.scene.remove(group);
+      disposeChunk(group);
+    }
+    this.meshes.clear();
+    this.chunks.clear();
+    this.occupancy.clear();
+    this.transparentParts.clear();
+    if (this.transparency) {
+      this.scene.remove(this.transparency.mesh);
+      this.transparency.dispose();
+      this.transparency = null;
+    }
+    this.versions = {};
+    for (const geometry of this.geometryCache.values()) geometry.dispose();
+    this.geometryCache.clear();
+    this.models.clear();
+  }
+
+  whenReady(): Promise<void> {
+    return this.buildPromise;
+  }
+
+  private scheduleBuild(ids: Iterable<string>) {
+    for (const id of ids) this.pendingBuilds.add(id);
+    if (!this.pendingBuilds.size || this.building) return;
+    this.building = true;
+    this.buildPromise = this.runBuilds().finally(() => {
+      this.building = false;
+    });
+  }
+
+  private async runBuilds() {
+    this.rebuilt = 0;
+    // Yield before expensive geometry work. Rapid slider inputs then replace one
+    // queued job, instead of rebuilding five complete scenes in the same task.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    while (this.pendingBuilds.size) {
+      const textureReady = this.textureReady;
+      await textureReady;
+      if (textureReady !== this.textureReady) continue;
+      const start = performance.now();
+      while (this.pendingBuilds.size && performance.now() - start < 6) {
+        const id = this.pendingBuilds.values().next().value!;
+        this.pendingBuilds.delete(id);
+        this.rebuild(id, this.occupancy);
+        this.rebuilt++;
+      }
+      this.requestDraw();
+      if (this.pendingBuilds.size)
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+    if (this.transparencyDirty) this.flushTransparency();
+    this.requestDraw();
   }
 
   geometry(id: string, faces: Face[], mask: string): THREE.BufferGeometry {
@@ -206,20 +315,46 @@ export class Viewer {
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geometry.computeVertexNormals();
     this.geometryCache.set(cacheKey, geometry);
+    if (this.geometryCache.size > 4096) {
+      const oldest = this.geometryCache.keys().next().value!;
+      this.geometryCache.get(oldest)!.dispose();
+      this.geometryCache.delete(oldest);
+    }
     return geometry;
   }
 
   rebuild(id: string, occupied: Map<string, RenderCell>) {
+    const chunk = id.split(',').map(Number);
+    const bottom = chunk[1] * 16;
+    const generations = [
+      id,
+      ...[
+        [1, 0, 0],
+        [-1, 0, 0],
+        [0, 1, 0],
+        [0, -1, 0],
+        [0, 0, 1],
+        [0, 0, -1],
+      ].map((d) => key(chunk.map((v, i) => v + d[i]))),
+    ].map((k) => this.chunkGenerations.get(k) ?? 0);
+    const buildKey =
+      generations.join(':') + ':' + Math.max(bottom - 1, Math.min(bottom + 16, this.layer));
+    if (this.builtKeys.get(id) === buildKey) return;
+    this.builtKeys.set(id, buildKey);
+    this.transparencyDirty = true;
     const old = this.meshes.get(id);
     if (old) {
       this.scene.remove(old);
       disposeChunk(old);
     }
     this.meshes.delete(id);
+    this.transparentParts.delete(id);
     const cells = this.chunks.get(id);
     if (!cells) return;
     const group = new THREE.Group();
     group.name = id;
+    const opaque = new Map<THREE.Material, GeometryPart[]>();
+    const transparent: GeometryPart[] = [];
     const batches = new Map<
       string,
       { model: Model; id: string; mask: string; cells: RenderCell[] }
@@ -234,7 +369,7 @@ export class Viewer {
           const neighbour = occupied.get(
             key([cell[0] + face.cull[0], cell[1] + face.cull[1], cell[2] + face.cull[2]]),
           );
-          if (!neighbour) return '1';
+          if (!neighbour || neighbour[1] > this.layer) return '1';
           const adjacent = this.models.get(neighbour[3]);
           return adjacent?.opaque_cube ||
             ((model.name.includes('glass') ||
@@ -253,37 +388,84 @@ export class Viewer {
       if (!batches.has(batchKey)) batches.set(batchKey, { model, id: cell[3], mask, cells: [] });
       batches.get(batchKey)!.cells.push(cell);
     }
-    const matrix = new THREE.Matrix4();
     for (const batch of batches.values()) {
       const geometry = this.geometry(batch.id, batch.model.faces, batch.mask);
       if (!geometry.attributes.position.count) continue;
-      const mesh = new THREE.InstancedMesh(
-        geometry,
-        this.materialFor(batch.model),
-        batch.cells.length,
-      );
-      batch.cells.forEach((cell, index) => {
-        if (batch.model.render_layer === 'translucent') {
-          mesh.position.set(cell[0], cell[1], cell[2]);
-          matrix.identity();
-        } else matrix.makeTranslation(cell[0], cell[1], cell[2]);
-        mesh.setMatrixAt(index, matrix);
-      });
-      mesh.userData.cells = batch.cells;
-      mesh.computeBoundingSphere();
-      group.add(mesh);
+      if (batch.model.render_layer !== 'translucent') {
+        const material = this.materialFor(batch.model);
+        let parts = opaque.get(material);
+        if (!parts) opaque.set(material, (parts = []));
+        for (const cell of batch.cells) parts.push({ geometry, cell });
+        if (batch.model.texts) {
+          for (const cell of batch.cells) addSignText(group, batch.model, cell);
+        }
+        continue;
+      }
+      for (const cell of batch.cells) transparent.push({ geometry, cell });
       if (batch.model.texts) {
         for (const cell of batch.cells) addSignText(group, batch.model, cell);
       }
     }
+    if (transparent.length) this.transparentParts.set(id, transparent);
+    for (const [material, parts] of opaque) {
+      group.add(mergedChunk(parts, material));
+    }
+    group.traverse((object) => {
+      object.updateMatrix();
+      object.matrixAutoUpdate = false;
+    });
     this.meshes.set(id, group);
     this.scene.add(group);
   }
 
+  private flushTransparency() {
+    this.transparencyDirty = false;
+    if (this.transparency) {
+      this.scene.remove(this.transparency.mesh);
+      this.transparency.dispose();
+      this.transparency = null;
+    }
+    const parts = [...this.transparentParts.values()].flat();
+    const texts: TextPart[] = [];
+    for (const group of this.meshes.values()) {
+      for (const object of group.children) {
+        if (!(object instanceof THREE.Mesh) || !object.userData.signText) continue;
+        object.visible = false;
+        const cell = this.occupancy.get(key(object.position.toArray()));
+        if (!cell) continue;
+        const geometry = object.geometry.toNonIndexed();
+        geometry.computeVertexNormals();
+        const count = geometry.attributes.position.count;
+        geometry.setAttribute(
+          'color',
+          new THREE.BufferAttribute(new Float32Array(count * 3).fill(1), 3),
+        );
+        const material = (object.material as THREE.MeshBasicMaterial).clone();
+        material.forceSinglePass = true;
+        texts.push({ geometry, cell, material });
+      }
+    }
+    if (parts.length || texts.length) {
+      this.transparency = new Transparency(parts, this.sortedMaterial, texts);
+      this.scene.add(this.transparency.mesh);
+    }
+    for (const text of texts) text.geometry.dispose();
+  }
+
   setLayer(layer: number) {
+    if (this.layer === layer) return;
+    const previous = this.layer;
     this.layer = layer;
-    const occupied = this.occupied();
-    for (const id of this.chunks.keys()) this.rebuild(id, occupied);
+    const low = Math.min(previous, layer),
+      high = Math.max(previous, layer);
+    const changed = new Set<string>();
+    for (const id of this.chunks.keys()) {
+      const bottom = Number(id.split(',')[1]) * 16;
+      if (bottom <= high && bottom + 15 >= low) {
+        changed.add(id);
+      }
+    }
+    this.scheduleBuild(changed);
     this.requestDraw();
   }
   fit(bounds: { low: Point; high: Point }) {
@@ -375,6 +557,7 @@ export class Viewer {
   }
 
   pick(event: PointerEvent): Hit | null {
+    if (this.building) return null;
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.ray.setFromCamera(
       new THREE.Vector2(
@@ -383,11 +566,18 @@ export class Viewer {
       ),
       this.camera,
     );
-    const objects = [...this.meshes.values()].flatMap((group) => group.children);
+    const objects = [...this.meshes.values()]
+      .filter((group) => group.visible)
+      .flatMap((group) => group.children);
+    if (this.transparency) objects.push(this.transparency.mesh);
     const intersections = this.ray.intersectObjects(objects, false);
     const hit = intersections[0];
-    if (hit && hit.instanceId !== undefined) {
-      const cell: RenderCell = hit.object.userData.cells[hit.instanceId];
+    const cell =
+      hit &&
+      (hit.instanceId !== undefined
+        ? (hit.object.userData.cells[hit.instanceId] as RenderCell)
+        : triangleOwner(hit.object, hit.faceIndex ?? -1));
+    if (hit && cell) {
       const n = hit.face?.normal ?? new THREE.Vector3(0, 1, 0);
       const normal: Point = [0, 0, 0];
       const axis =
@@ -421,6 +611,19 @@ export class Viewer {
   }
 
   thumbnail(model: Model, size = 72): string {
+    const cacheKey = this.resourceHash + ':' + size + ':' + JSON.stringify(model);
+    const cached = this.thumbnails.get(cacheKey);
+    if (cached) return cached;
+    if (!this.thumbnailRenderer) {
+      this.thumbnailRenderer = new THREE.WebGLRenderer({
+        antialias: true,
+        preserveDrawingBuffer: true,
+      });
+      this.thumbnailRenderer.setPixelRatio(1);
+      this.thumbnailRenderer.setClearColor('#eef2f2');
+      this.thumbnailRenderer.outputColorSpace = THREE.SRGBColorSpace;
+    }
+    const renderer = this.thumbnailRenderer;
     const temporary = new THREE.Scene();
     temporary.add(new THREE.AmbientLight(0xffffff, 2.2));
     const light = new THREE.DirectionalLight(0xffffff, 2);
@@ -433,13 +636,14 @@ export class Viewer {
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
     camera.position.set(2.4, 1.9, 2.6);
     camera.lookAt(0.5, 0.5, 0.5);
-    const oldSize = this.renderer.getSize(new THREE.Vector2());
-    this.renderer.setSize(size, size, false);
-    this.renderer.render(temporary, camera);
-    const image = this.renderer.domElement.toDataURL('image/png');
-    this.renderer.setSize(oldSize.x, oldSize.y, false);
+    renderer.setSize(size, size, false);
+    renderer.render(temporary, camera);
+    const image = renderer.domElement.toDataURL('image/png');
     this.models.delete(id);
-    this.requestDraw();
+    this.geometryCache.delete(id + ':' + '1'.repeat(model.faces.length));
+    geometry.dispose();
+    this.thumbnails.set(cacheKey, image);
+    if (this.thumbnails.size > 256) this.thumbnails.delete(this.thumbnails.keys().next().value!);
     return image;
   }
 }

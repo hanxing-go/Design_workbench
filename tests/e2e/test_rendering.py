@@ -86,12 +86,15 @@ def test_special_block_scene_transparency_and_thumbnails(tmp_path: Path) -> None
                 page.wait_for_function(
                     "window.workbench && !window.workbench.busy && window.workbench.viewer.models.size >= 10"
                 )
-                assert (
-                    page.evaluate(
-                        "[...window.workbench.viewer.meshes.values()].reduce((sum,g)=>sum+g.children.length,0)"
-                    )
-                    == 10
-                )
+                # Drawing batches are independent of the number of blocks. Every
+                # sample must still own actual render geometry after batching.
+                assert page.evaluate("""() => {
+                  const v=window.workbench.viewer, rendered=new Set();
+                  const collect=o=>{for(const c of o.userData.cells??[])rendered.add(c.slice(0,3).join(','));};
+                  for(const group of v.meshes.values())group.traverse(collect);
+                  if(v.transparency)collect(v.transparency.mesh);
+                  return [...Array(10)].every((_,i)=>rendered.has(`${i*3},0,0`));
+                }""")
                 assert page.evaluate(
                     "window.workbench.viewer.translucent.transparent && !window.workbench.viewer.translucent.depthWrite"
                 )
@@ -110,12 +113,13 @@ def test_special_block_scene_transparency_and_thumbnails(tmp_path: Path) -> None
                     chunks:{'0,0,0':cells},removed_chunks:[...v.chunks.keys()].filter(k=>k!=='0,0,0'),
                     chunk_versions:{},models:{[id]:m},atlas:model.atlas});
                   v.update(packet('test',model,[[0,0,0,'test','main',false]]));
+                  await v.whenReady();
                   v.camera.position.set(.5,.5,4); v.controls.target.set(.5,.5,.5); v.controls.update();
                   v.drawNow();
                   const before=v.renderer.domElement.toDataURL();
                   const marked={...model,render_layer:'opaque',faces:model.faces.map(f=>({...f,color:'#ff3030'}))};
                   const p=packet('test',model,[[0,0,0,'test','main',false],[0,0,-1,'marker','main',false]]);
-                  p.models.marker=marked; v.update(p); v.drawNow();
+                  p.models.marker=marked; v.update(p); await v.whenReady(); v.drawNow();
                   return {before,after:v.renderer.domElement.toDataURL(),thumbnail:v.thumbnail(model)};
                 }""")
                 import base64

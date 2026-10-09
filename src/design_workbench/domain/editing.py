@@ -1,10 +1,13 @@
 import math
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .errors import WorkbenchError
 from .models import BlockState, Bounds, Cell, Point, Scene
+from .paintings import VARIANTS, Painting, fits, validate_variant
+from .placement import FACES, needs_support, snap_state
 
 DIRECTIONS = ("north", "east", "south", "west")
 VECTORS: dict[str, Point] = {
@@ -17,6 +20,7 @@ VECTORS: dict[str, Point] = {
 
 class Registry(Protocol):
     def normalize(self, state: BlockState) -> BlockState: ...
+    def supports_attachment(self, state: BlockState) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -31,6 +35,7 @@ class EditPlan:
     cells: dict[Point, Cell]
     changes: list[tuple[Point, Cell | None, Cell | None]]
     touched: int
+    paintings: list[Painting]
 
 
 def as_point(value: Any) -> Point:
@@ -160,6 +165,7 @@ class Editor:
         if not 1 <= len(operations) <= self.limits.max_operations:
             raise WorkbenchError("OPERATION_LIMIT", "编辑操作数量超出预算。")
         cells = dict(scene.cells)
+        paintings = list(scene.paintings)
         touched = 0
 
         def put(
@@ -192,23 +198,93 @@ class Editor:
                 BlockState.make(value["name"], value.get("properties", {}))
             )
 
+        def place_block(
+            point: Point, state: BlockState, block_group: str, complete_beds: bool
+        ) -> None:
+            if complete_beds and state.name.endswith("_bed"):
+                other = partner(point, Cell(state, block_group, "design"))
+                if other is None:
+                    raise WorkbenchError("INVALID_STATE", "床缺少朝向。")
+                if any(p in cells and not cells[p].state.is_air for p in (point, other)):
+                    raise WorkbenchError("EDIT_COLLISION", "床的两格位置必须为空。")
+                properties = dict(state.properties)
+                properties["part"] = "head" if properties["part"] == "foot" else "foot"
+                put(other, BlockState.make(state.name, properties), block_group)
+            put(point, state, block_group)
+
         for operation in operations:
             kind = operation["op"]
             group = operation.get("group", "main")
             if kind == "set":
                 for block in operation["blocks"]:
-                    point, state = as_point(block["position"]), operation_state(block)
-                    block_group = block.get("group", group)
-                    if operation.get("complete_beds") and state.name.endswith("_bed"):
-                        other = partner(point, Cell(state, block_group, "design"))
-                        if other is None:
-                            raise WorkbenchError("INVALID_STATE", "床缺少朝向。")
-                        if any(p in cells and not cells[p].state.is_air for p in (point, other)):
-                            raise WorkbenchError("EDIT_COLLISION", "床的两格位置必须为空。")
-                        properties = dict(state.properties)
-                        properties["part"] = "head" if properties["part"] == "foot" else "foot"
-                        put(other, BlockState.make(state.name, properties), block_group)
-                    put(point, state, block_group)
+                    place_block(
+                        as_point(block["position"]),
+                        operation_state(block),
+                        block.get("group", group),
+                        operation.get("complete_beds", False),
+                    )
+            elif kind == "place":
+                support, face = as_point(operation["support"]), operation["face"]
+                if operation.get("ground"):
+                    if support[1] != -1 or face != "up":
+                        raise WorkbenchError(
+                            "INVALID_ATTACHMENT", "工作台起笔平面只接受 Y=0 顶面放置。"
+                        )
+                elif support not in cells or cells[support].state.is_air:
+                    raise WorkbenchError("MISSING_SUPPORT", "支撑方块已经不存在，请重新点击。")
+                if (
+                    not operation.get("ground")
+                    and needs_support(operation_state(operation))
+                    and not self.registry.supports_attachment(cells[support].state)
+                ):
+                    raise WorkbenchError(
+                        "INVALID_ATTACHMENT", "这个方块没有可用的完整支撑面；可关闭吸附手动编辑。"
+                    )
+                target = as_point([support[i] + FACES[face][i] for i in range(3)])
+                if target in cells and not cells[target].state.is_air:
+                    raise WorkbenchError("EDIT_COLLISION", "吸附目标已有方块。")
+                state = self.registry.normalize(
+                    snap_state(
+                        operation_state(operation),
+                        face,
+                        operation.get("heading", "north"),
+                        operation.get("hit_height", 0.5),
+                    )
+                )
+                place_block(target, state, group, True)
+            elif kind == "painting":
+                support, face = as_point(operation["support"]), operation["face"]
+                anchor = as_point([support[i] + FACES[face][i] for i in range(3)])
+                variant = operation.get("variant", "auto")
+                candidates = (
+                    sorted(VARIANTS, key=lambda name: -math.prod(VARIANTS[name]))
+                    if variant == "auto"
+                    else [validate_variant(variant)]
+                )
+                for candidate in candidates:
+                    painting = Painting(str(uuid.uuid4()), anchor, face, candidate)
+                    if fits(painting, cells, scene.bounds, paintings, scene.protected):
+                        normal = FACES[face]
+                        if any(
+                            not self.registry.supports_attachment(
+                                cells[as_point([p[i] - normal[i] for i in range(3)])].state
+                            )
+                            for p in painting.positions()
+                        ):
+                            continue
+                        paintings.append(painting)
+                        touched += len(painting.positions())
+                        break
+                else:
+                    raise WorkbenchError("INVALID_ATTACHMENT", "墙面或前方空间不足，无法挂这幅画。")
+                if len(paintings) > 1024:
+                    raise WorkbenchError("EDIT_LIMIT", "画的数量超过 1024 幅预算。")
+            elif kind == "delete_painting":
+                found = next((p for p in paintings if p.id == operation["id"]), None)
+                if found is None:
+                    raise WorkbenchError("PAINTING_NOT_FOUND", "画已不存在或属于只读导入实体。")
+                paintings.remove(found)
+                touched += 1
             elif kind == "fill":
                 bounds = as_bounds(operation["bounds"])
                 if bounds.volume > self.limits.max_cells:
@@ -388,9 +464,31 @@ class Editor:
                     put(point, frame if edge else glass, group)
             else:
                 raise WorkbenchError("UNKNOWN_OPERATION", f"未支持的编辑操作：{kind}。", "op")
+        for painting in paintings:
+            normal = FACES[painting.facing]
+            if any(
+                p in cells and not self.registry.supports_attachment(cells[p].state)
+                for p in [
+                    as_point([point[i] - normal[i] for i in range(3)])
+                    for point in painting.positions()
+                ]
+            ):
+                raise WorkbenchError("PAINTING_SUPPORT", "先删除画，再改变支撑方块的形状。")
+            if not fits(
+                painting,
+                cells,
+                scene.bounds,
+                [p for p in paintings if p.id != painting.id],
+                scene.protected,
+            ):
+                raise WorkbenchError(
+                    "PAINTING_SUPPORT", "先删除受影响的画，再修改它的支撑或占用格。"
+                )
+        if touched > self.limits.max_cells:
+            raise WorkbenchError("EDIT_LIMIT", "修改超过操作预算。")
         changes = [
             (point, scene.cells.get(point), cells.get(point))
             for point in sorted(scene.cells.keys() | cells.keys())
             if scene.cells.get(point) != cells.get(point)
         ]
-        return EditPlan(cells, changes, touched)
+        return EditPlan(cells, changes, touched, paintings)

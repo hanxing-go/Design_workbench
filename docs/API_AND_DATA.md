@@ -1,6 +1,6 @@
 # API 与数据契约
 
-当前应用版本 0.1.0；编辑请求 schema_version=1；项目 SQLite schema=2；资源清单 schema_version=1；蓝图 Version=6。它们不是同一个版本号。
+当前应用版本 0.1.0；编辑请求 schema_version=1；项目 SQLite schema=3；资源清单 schema_version=1；蓝图 Version=6。它们不是同一个版本号。
 
 ## 编辑请求
 
@@ -30,6 +30,9 @@
 | op | 主要字段与范围 |
 | --- | --- |
 | set | blocks：position、state、可选 group |
+| place | support、face、heading、hit_height、ground、state、group；按支撑面自动定向，见 [自动吸附](PLACEMENT_SNAP.md) |
+| painting | support、face 为水平四向、variant=auto 或官方图案名；创建画实体 |
+| delete_painting | id：新增画的 UUID |
 | fill | bounds、state、group、hollow；闭区间盒体或外壳 |
 | delete | selector |
 | replace | selector、state |
@@ -53,6 +56,7 @@ selector 可包含 bounds、name、group、region，多个条件取交集。屋�
 | GET | /api/catalog | query、category、offset、limit 分页 |
 | GET | /api/material/{name} | 模型与贴图信息；properties 是 JSON 字符串查询参数 |
 | GET | /api/atlas.png | 本地纹理图集 |
+| GET | /api/paintings | 画的图案与尺寸 |
 | GET / POST | /api/projects | 列表 / 创建 |
 | GET | /api/projects/{id} | 摘要、历史、修订 |
 | POST | /api/projects/{id}/inspect | selector；limit 默认 128、最大 2048 |
@@ -76,7 +80,7 @@ selector 可包含 bounds、name、group、region，多个条件取交集。屋�
 
 项目使用 16³ 分块、局部调色板和压缩内容。一个 SQLite 事务同时写入分块、修订、差异、事件、请求指纹和必要的原始蓝图附件。撤销/重做也产生单调递增修订；撤销后新编辑清空重做分支。
 
-异常退出后 SQLite 回滚未提交事务；已测试写入竞争和进程中断。重开项目会读取持久化历史。schema 1→2 迁移前使用 SQLite backup 创建 `.v1-backup-*`，迁移失败保留原件；未知或更高 schema 明确拒绝。不是自动恢复任意损坏数据库的工具。
+异常退出后 SQLite 回滚未提交事务；已测试写入竞争和进程中断。重开项目会读取持久化历史。schema 1/2→3 迁移前使用 SQLite backup 创建 `.v1-backup-*` 或 `.v2-backup-*`，迁移失败保留原件；未知或更高 schema 明确拒绝。新增画与方块共用事务和历史，保存在场景元数据。不是自动恢复任意损坏数据库的工具。
 
 手工备份前先关闭服务，再复制项目文件；不要在事务进行时仅复制主文件而漏掉 WAL。恢复时保留原损坏文件，将已核验备份复制为新项目路径后打开。CLI 可查询摘要，GUI 项目列表会报告不能读取的文件。
 

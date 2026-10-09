@@ -7,7 +7,7 @@ from PIL import Image
 
 from design_workbench.adapters.rendering.fluids import fluid_model
 from design_workbench.adapters.rendering.signs import sign_texts
-from design_workbench.adapters.resources.atlas import build_atlas
+from design_workbench.adapters.resources.atlas import RECIPE_VERSION, build_atlas
 from design_workbench.adapters.resources.catalog import Catalog
 from design_workbench.adapters.resources.geometry import default_uv
 from design_workbench.adapters.resources.pack import ResourceManager
@@ -115,7 +115,7 @@ def test_atlas_rectangular_entity_and_declared_first_animation_frame(tmp_path: P
     before = (cache / "1.20.1/old/manifest.json").read_bytes()
     manager = ResourceManager(cache)
     pack = manager.active("1.20.1")
-    assert pack is not None and pack.manifest["recipe_version"] == 2
+    assert pack is not None and pack.manifest["recipe_version"] == RECIPE_VERSION
     assert pack.directory.name != "old"
     assert manager.active("1.20.1").directory == pack.directory  # type: ignore[union-attr]
     assert (cache / "1.20.1/old/manifest.json").read_bytes() == before

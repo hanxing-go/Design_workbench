@@ -14,8 +14,9 @@ from typing import Any
 
 from design_workbench.domain.errors import WorkbenchError
 from design_workbench.domain.models import BlockState, Bounds, Cell, Point, Scene, chunk_key
+from design_workbench.domain.paintings import Painting
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def encode(value: Any) -> bytes:
@@ -46,6 +47,7 @@ def metadata(scene: Scene) -> dict[str, Any]:
         "data_version": scene.data_version,
         "bounds": scene.bounds.as_dict(),
         "protected": sorted(scene.protected),
+        "paintings": [p.as_dict() for p in scene.paintings],
     }
 
 
@@ -129,16 +131,19 @@ class SqliteStore:
                     connection.execute(statement)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 connection.commit()
-            elif version == 1:
-                backup = self.path.with_name(self.path.name + f".v1-backup-{uuid.uuid4().hex[:8]}")
+            elif version in {1, 2}:
+                backup = self.path.with_name(
+                    self.path.name + f".v{version}-backup-{uuid.uuid4().hex[:8]}"
+                )
                 with sqlite3.connect(backup) as backup_connection:
                     connection.backup(backup_connection)
                 connection.execute("BEGIN IMMEDIATE")
                 try:
-                    connection.execute(
-                        "CREATE TABLE requests(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,response TEXT NOT NULL)"
-                    )
-                    connection.execute("PRAGMA user_version=2")
+                    if version == 1:
+                        connection.execute(
+                            "CREATE TABLE requests(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,response TEXT NOT NULL)"
+                        )
+                    connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                     connection.commit()
                 except sqlite3.DatabaseError:
                     connection.rollback()
@@ -183,6 +188,7 @@ class SqliteStore:
                 Bounds(tuple(data["bounds"]["low"]), tuple(data["bounds"]["high"])),
                 cells,
                 protected,
+                [Painting.from_dict(value) for value in data.get("paintings", [])],
             )
 
     def replay(self, request_id: str, fingerprint: str) -> dict[str, Any] | None:
@@ -284,6 +290,9 @@ class SqliteStore:
             response = {
                 "revision": revision,
                 "changed": len(changes),
+                "paintings_changed": int(
+                    before.get("paintings", []) != metadata(scene)["paintings"]
+                ),
                 "changed_chunks": [list(key) for key in sorted(keys)],
                 "request_id": request_id,
             }

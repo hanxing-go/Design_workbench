@@ -38,6 +38,29 @@ class SetBlocks(Contract):
     blocks: list[PlacedBlock] = Field(min_length=1, max_length=500_000)
 
 
+class Place(Contract):
+    op: Literal["place"]
+    support: Position
+    face: Literal["up", "down", "north", "south", "east", "west"]
+    heading: Literal["north", "south", "east", "west"] = "north"
+    hit_height: float = Field(default=0.5, ge=0, le=1)
+    ground: bool = False
+    state: StateInput
+    group: str = Field(default="main", min_length=1, max_length=128)
+
+
+class PlacePainting(Contract):
+    op: Literal["painting"]
+    support: Position
+    face: Literal["north", "south", "east", "west"]
+    variant: str = Field(default="auto", min_length=1, max_length=128)
+
+
+class DeletePainting(Contract):
+    op: Literal["delete_painting"]
+    id: str = Field(min_length=1, max_length=128)
+
+
 class Fill(Contract):
     op: Literal["fill"]
     bounds: Box
@@ -124,7 +147,20 @@ class Window(Contract):
 
 
 type Operation = Annotated[
-    SetBlocks | Fill | Delete | Replace | Group | Transform | Array | Extrude | Arc | Roof | Window,
+    SetBlocks
+    | Place
+    | PlacePainting
+    | DeletePainting
+    | Fill
+    | Delete
+    | Replace
+    | Group
+    | Transform
+    | Array
+    | Extrude
+    | Arc
+    | Roof
+    | Window,
     Field(discriminator="op"),
 ]
 

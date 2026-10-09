@@ -1,5 +1,11 @@
+from __future__ import annotations
+
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .paintings import Painting
 
 from .errors import WorkbenchError
 
@@ -40,7 +46,7 @@ class BlockState:
     properties: tuple[tuple[str, str], ...] = ()
 
     @classmethod
-    def make(cls, name: str, properties: Mapping[str, str] | None = None) -> "BlockState":
+    def make(cls, name: str, properties: Mapping[str, str] | None = None) -> BlockState:
         return cls(
             name if ":" in name else f"minecraft:{name}", tuple(sorted((properties or {}).items()))
         )
@@ -73,6 +79,7 @@ class Scene:
     bounds: Bounds
     cells: dict[Point, Cell] = field(default_factory=dict)
     protected: set[Point] = field(default_factory=set)
+    paintings: list[Painting] = field(default_factory=list)
 
     def summary(self) -> dict[str, object]:
         groups: dict[str, int] = {}
@@ -98,6 +105,7 @@ class Scene:
             "bounds": self.bounds.as_dict(),
             "blocks": len(occupied_points),
             "stored_cells": len(self.cells),
+            "paintings": len(self.paintings),
             "occupied_bounds": occupied,
             "groups": groups,
             "materials": materials,

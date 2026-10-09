@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-RECIPE_VERSION = 2
+RECIPE_VERSION = 3
 
 
 def build_atlas(directory: Path) -> dict[str, Any]:
@@ -20,6 +20,7 @@ def build_atlas(directory: Path) -> dict[str, Any]:
                 "*/textures/block/**/*.png",
                 "*/textures/entity/bed/*.png",
                 "*/textures/entity/signs/**/*.png",
+                "*/textures/painting/*.png",
             )
             for p in assets.glob(pattern)
         }

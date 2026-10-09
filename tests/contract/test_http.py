@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from design_workbench.application.contracts import EditRequest
@@ -48,3 +49,72 @@ def test_http_and_application_share_semantics(tmp_path: Path) -> None:
         assert invalid.status_code == 422
         assert invalid.json()["error"]["code"] == "INVALID_REQUEST"
         assert client.post("/api/projects", json={"name": "x", "unknown": True}).status_code == 422
+
+
+def test_rename_persists_preserves_blocks_and_history(tmp_path: Path) -> None:
+    settings = Settings(
+        data_dir=tmp_path / "data", cache_dir=tmp_path / "cache", log_dir=tmp_path / "log"
+    )
+    app = create_app(settings)
+    with TestClient(app) as client:
+        identifier = client.post("/api/projects", json={"name": "原名称"}).json()["project_id"]
+        path = f"/api/projects/{identifier}"
+        client.post(
+            path + "/edit",
+            json={
+                "expected_revision": 0,
+                "request_id": "place",
+                "operations": [
+                    {"op": "set", "blocks": [{"position": [0, -2, 0], "state": {"name": "stone"}}]}
+                ],
+            },
+        )
+        request = {"name": "  新建筑名称  ", "expected_revision": 1, "request_id": "rename"}
+        renamed = client.patch(path, json=request)
+        assert renamed.status_code == 200
+        assert renamed.json()["revision"] == 2
+        assert renamed.json()["changed"] == 0
+        assert client.patch(path, json=request).json() == renamed.json()
+        assert client.get(path).json()["name"] == "新建筑名称"
+        assert client.get(path).json()["blocks"] == 1
+        assert client.get(path).json()["events"][0]["kind"] == "rename"
+        assert client.get("/api/projects").json()["items"][0]["name"] == "新建筑名称"
+        service = app.state.workbench.service(
+            settings.data_dir / "projects" / f"{identifier}.dwbench"
+        )
+        assert service.repository.load().name == "新建筑名称"
+        conflict = client.patch(path, json={**request, "name": "过时名称", "request_id": "stale"})
+        assert conflict.status_code == 409
+        assert client.patch(path, json={**request, "name": "另一名称"}).status_code == 409
+        assert client.get(path).json()["name"] == "新建筑名称"
+        assert (
+            client.post(
+                path + "/history/undo", json={"expected_revision": 2, "request_id": "undo-name"}
+            ).status_code
+            == 200
+        )
+        assert client.get(path).json()["name"] == "原名称"
+        assert client.get(path).json()["blocks"] == 1
+        assert (
+            client.post(
+                path + "/history/redo", json={"expected_revision": 3, "request_id": "redo-name"}
+            ).status_code
+            == 200
+        )
+        assert client.get(path).json()["name"] == "新建筑名称"
+
+
+@pytest.mark.parametrize("name", ["", "   ", "x" * 129, None])
+def test_rename_rejects_invalid_name(tmp_path: Path, name: str | None) -> None:
+    settings = Settings(
+        data_dir=tmp_path / "data", cache_dir=tmp_path / "cache", log_dir=tmp_path / "log"
+    )
+    with TestClient(create_app(settings)) as client:
+        identifier = client.post("/api/projects", json={"name": "原名称"}).json()["project_id"]
+        path = f"/api/projects/{identifier}"
+        response = client.patch(
+            path, json={"name": name, "expected_revision": 0, "request_id": "invalid"}
+        )
+        assert response.status_code == 422
+        assert client.get(path).json()["name"] == "原名称"
+        assert client.get(path).json()["revision"] == 0

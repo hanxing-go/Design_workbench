@@ -287,9 +287,10 @@ class SqliteStore:
                 "changed_chunks": [list(key) for key in sorted(keys)],
                 "request_id": request_id,
             }
-            self._record(
-                connection, response, fingerprint, "import" if attachment is not None else "edit"
-            )
+            kind = "import" if attachment is not None else "edit"
+            if attachment is None and not changes and before["name"] != scene.name:
+                kind = "rename"
+            self._record(connection, response, fingerprint, kind)
             connection.commit()
             return response
 

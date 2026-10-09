@@ -18,6 +18,7 @@ from design_workbench.application.contracts import (
     EditRequest,
     ExportRequest,
     HistoryRequest,
+    RenameRequest,
     Selector,
 )
 from design_workbench.bootstrap import Workbench
@@ -165,6 +166,10 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/api/projects/{identifier}")
     def summary(identifier: str) -> dict[str, Any]:
         return workbench.service(project_path(identifier)).summary()
+
+    @app.patch("/api/projects/{identifier}")
+    def rename_project(identifier: str, request: RenameRequest) -> dict[str, Any]:
+        return workbench.service(project_path(identifier)).rename(request)
 
     @app.post("/api/projects/{identifier}/inspect")
     def inspect_scene(identifier: str, selector: Selector, limit: int = 128) -> dict[str, Any]:

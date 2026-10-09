@@ -3,6 +3,7 @@ import shell from './shell.html?raw';
 import type { Material, Model, Packet, Point, Selection, State, Summary } from './types';
 import { Viewer } from './viewer';
 import { disposeChunk } from './signText';
+import { LayerPlayer } from './layerPlayer';
 
 const root = document.querySelector<HTMLDivElement>('#app')!;
 root.innerHTML = shell;
@@ -28,6 +29,7 @@ async function api<T>(path: string, body?: unknown, method?: string): Promise<T>
   return data as T;
 }
 const viewer = new Viewer(el('stage'));
+const layerPlayer = new LayerPlayer(viewer);
 let project = '',
   summary: Summary | null = null,
   material: Material | null = null,
@@ -46,6 +48,8 @@ const setBusy = (value: boolean) => {
   busy = value;
   el<HTMLButtonElement>('commit').disabled = value;
   el<HTMLButtonElement>('preview').disabled = value;
+  el<HTMLButtonElement>('rename-submit').disabled = value;
+  layerPlayer.setBusy(value);
 };
 const endpoint = (suffix = '') => `/api/projects/${project}${suffix}`;
 
@@ -123,7 +127,8 @@ async function refresh(full = false) {
   el('history').replaceChildren(
     ...events.slice(0, 8).map((event) => {
       const div = document.createElement('div');
-      div.textContent = `r${event.revision} · ${event.kind} · ${event.changed} 格`;
+      const kind = { edit: '编辑', import: '导入', rename: '重命名', undo: '撤销', redo: '重做' };
+      div.textContent = `r${event.revision} · ${kind[event.kind as keyof typeof kind] ?? event.kind} · ${event.changed} 格`;
       return div;
     }),
   );
@@ -136,6 +141,8 @@ async function refresh(full = false) {
 }
 function renderSummary(value: Summary) {
   el('scene-name').textContent = value.name;
+  const option = el<HTMLSelectElement>('projects').selectedOptions[0];
+  if (option) option.textContent = value.name;
   el('revision').textContent = `修订 ${value.revision}`;
   el('scene-meta').textContent =
     `${value.blocks.toLocaleString()} 个方块 · 修订 ${value.revision} · 已保存`;
@@ -160,12 +167,7 @@ function renderSummary(value: Summary) {
       return button;
     }),
   );
-  if (value.occupied_bounds) {
-    const slider = el<HTMLInputElement>('layer');
-    slider.min = String(value.occupied_bounds.low[1]);
-    slider.max = String(value.occupied_bounds.high[1]);
-    if (viewer.layer === Infinity) slider.value = slider.max;
-  }
+  layerPlayer.update(value);
 }
 
 async function loadProjects(preferred?: string) {
@@ -189,7 +191,6 @@ async function loadProjects(preferred?: string) {
   previous = null;
   setInput('compare', 'current');
   select(null);
-  el('layer-label').textContent = '全部';
   clearPreview();
   await refresh(true);
   history.replaceState({}, '', `?project=${project}`);
@@ -445,6 +446,113 @@ viewer.onHit = (hit, event) =>
 function bind(id: string, action: () => Promise<void>) {
   el(id).onclick = () => void safely(action);
 }
+const renameDialog = el<HTMLDialogElement>('rename-dialog');
+el('rename-project').onclick = () => {
+  if (busy || !summary) return;
+  layerPlayer.stop();
+  setInput('project-name', summary.name);
+  el<HTMLInputElement>('project-name').setCustomValidity('');
+  el('rename-error').textContent = '';
+  renameDialog.showModal();
+  el<HTMLInputElement>('project-name').select();
+};
+el<HTMLInputElement>('project-name').oninput = () => {
+  el<HTMLInputElement>('project-name').setCustomValidity('');
+  el('rename-error').textContent = '';
+};
+el<HTMLFormElement>('rename-form').onsubmit = (event) => {
+  event.preventDefault();
+  const name = input('project-name').trim();
+  if (!name) {
+    el<HTMLInputElement>('project-name').setCustomValidity('请输入设计名称');
+    el<HTMLInputElement>('project-name').reportValidity();
+    return;
+  }
+  if (name === summary?.name) {
+    renameDialog.close();
+    return;
+  }
+  void safely(async () => {
+    try {
+      previous = snapshot();
+      await api(
+        endpoint(),
+        {
+          name,
+          expected_revision: summary!.revision,
+          request_id: crypto.randomUUID(),
+        },
+        'PATCH',
+      );
+      clearPreview();
+      await refresh();
+      renameDialog.close();
+      message(`已重命名为「${name}」并保存`);
+    } catch (error) {
+      el('rename-error').textContent = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
+  });
+};
+el('help').onclick = () => {
+  layerPlayer.stop();
+  el<HTMLDialogElement>('help-dialog').showModal();
+};
+document.querySelectorAll<HTMLButtonElement>('[data-close-dialog]').forEach((button) => {
+  button.onclick = () => el<HTMLDialogElement>(button.dataset.closeDialog!).close();
+});
+
+type Panels = { library: boolean; inspector: boolean };
+function savedPanels(): Panels {
+  const fallback = { library: innerWidth > 780, inspector: innerWidth > 780 };
+  try {
+    const value = JSON.parse(localStorage.getItem('workbench.panels') ?? 'null');
+    return value && typeof value.library === 'boolean' && typeof value.inspector === 'boolean'
+      ? value
+      : fallback;
+  } catch {
+    return fallback;
+  }
+}
+let panels = savedPanels();
+let panelsBeforeFocus: Panels | null = null;
+function renderPanels() {
+  for (const side of ['library', 'inspector'] as const) {
+    el(side).hidden = !panels[side];
+    el('workbench-layout').classList.toggle(`${side}-hidden`, !panels[side]);
+    el(`toggle-${side}`).setAttribute('aria-expanded', String(panels[side]));
+  }
+  const focused = !panels.library && !panels.inspector;
+  el('focus-mode').setAttribute('aria-pressed', String(focused));
+  el('focus-mode').textContent = focused ? '退出专注' : '专注';
+  try {
+    localStorage.setItem('workbench.panels', JSON.stringify(panels));
+  } catch {
+    // The controls also work when browser storage is unavailable.
+  }
+}
+for (const side of ['library', 'inspector'] as const) {
+  el(`toggle-${side}`).onclick = () => {
+    panelsBeforeFocus = null;
+    panels[side] = !panels[side];
+    renderPanels();
+  };
+}
+el('focus-mode').onclick = () => {
+  if (!panels.library && !panels.inspector) {
+    panels = panelsBeforeFocus ?? { library: true, inspector: true };
+    panelsBeforeFocus = null;
+  } else {
+    panelsBeforeFocus = { ...panels };
+    panels = { library: false, inspector: false };
+  }
+  renderPanels();
+};
+renderPanels();
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) layerPlayer.stop();
+});
+
 bind('new-project', async () => {
   const name = prompt('建筑名称', '新建筑');
   if (!name) return;
@@ -480,11 +588,6 @@ bind('select-bounds', async () => {
   message('选区已更新');
 });
 el<HTMLSelectElement>('operation').onchange = fields;
-el<HTMLInputElement>('layer').oninput = () => {
-  const layer = Number(input('layer'));
-  viewer.setLayer(layer);
-  el('layer-label').textContent = String(layer);
-};
 el<HTMLSelectElement>('compare').onchange = () =>
   void safely(async () => {
     clearPreview();
@@ -497,6 +600,7 @@ el<HTMLSelectElement>('compare').onchange = () =>
         ...previous,
         removed_chunks: Object.keys(viewer.versions).filter((id) => !previous!.chunks[id]),
       });
+      layerPlayer.update(previous.summary);
       message(`查看修改前 r${previous.revision}`);
     } else {
       await refresh(true);
@@ -512,12 +616,15 @@ document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach(
         .forEach((item) => item.classList.toggle('active', item === button));
     }),
 );
-document
-  .querySelectorAll<HTMLButtonElement>('[data-view]')
-  .forEach(
-    (button) =>
-      (button.onclick = () => viewer.view(button.dataset.view as 'iso' | 'front' | 'side' | 'top')),
-  );
+document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(
+  (button) =>
+    (button.onclick = () => {
+      viewer.view(button.dataset.view as 'iso' | 'front' | 'side' | 'top');
+      document
+        .querySelectorAll<HTMLButtonElement>('[data-view]')
+        .forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+    }),
+);
 el('fit').onclick = () => {
   if (summary?.occupied_bounds) viewer.fit(summary.occupied_bounds);
 };
@@ -651,15 +758,68 @@ bind('cabin', async () => {
   message('木屋起稿完成，可继续自由编辑');
 });
 document.addEventListener('keydown', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target : null;
   if (
-    (event.ctrlKey || event.metaKey) &&
-    event.key.toLowerCase() === 'z' &&
-    !['INPUT', 'TEXTAREA', 'SELECT'].includes((event.target as HTMLElement).tagName)
+    event.isComposing ||
+    event.repeat ||
+    event.altKey ||
+    document.querySelector('dialog[open]') ||
+    target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+  )
+    return;
+  const key = event.key.toLowerCase();
+  if (target?.closest('button') && [' ', 'arrowleft', 'arrowright'].includes(key)) return;
+  if (event.ctrlKey || event.metaKey) {
+    const action =
+      key === 'z'
+        ? event.shiftKey
+          ? 'redo'
+          : 'undo'
+        : key === 'y'
+          ? 'redo'
+          : key === 's'
+            ? 'save'
+            : '';
+    if (action) {
+      event.preventDefault();
+      el(action).click();
+    }
+    return;
+  }
+  const actions: Record<string, () => void> = {
+    ' ': () => layerPlayer.toggle(),
+    arrowleft: () => layerPlayer.step(-1),
+    arrowright: () => layerPlayer.step(1),
+    '[': () => el('toggle-library').click(),
+    ']': () => el('toggle-inspector').click(),
+    f: () => el('fit').click(),
+    f2: () => el('rename-project').click(),
+    '?': () => el('help').click(),
+    escape: () => {
+      layerPlayer.stop();
+      clearPreview();
+    },
+  };
+  if (['1', '2', '3'].includes(key)) {
+    event.preventDefault();
+    document
+      .querySelector<HTMLButtonElement>(
+        `[data-tool="${{ '1': 'select', '2': 'place', '3': 'erase' }[key as '1' | '2' | '3']}"]`,
+      )
+      ?.click();
+  } else if (
+    key === 'tab' &&
+    (target === document.body ||
+      target?.tagName === 'CANVAS' ||
+      target?.id === 'stage' ||
+      target?.id === 'app')
   ) {
     event.preventDefault();
-    el(event.shiftKey ? 'redo' : 'undo').click();
+    el('focus-mode').click();
+  } else if (actions[key]) {
+    event.preventDefault();
+    actions[key]();
   }
-  if (event.key === 'Escape') clearPreview();
 });
 
 Object.defineProperty(window, 'workbench', {

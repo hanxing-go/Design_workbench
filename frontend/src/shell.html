@@ -1,18 +1,32 @@
 <header>
   <div class="brand">
-    <span class="brand-mark">▧</span>
+    <span class="brand-mark" aria-hidden="true"
+      ><svg viewBox="0 0 32 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M16 1 31 9v18l-15 8L1 27V9Z" fill="#10150d" />
+        <path d="m16 3 13 7-13 7L3 10Z" fill="#8cb859" />
+        <path d="m3 12 12 7v13L3 25Z" fill="#795135" />
+        <path d="m17 19 12-7v13l-12 7Z" fill="#523a2b" />
+        <path d="m3 12 12 7v5l-4-2v-3l-4-2v3l-4-2Z" fill="#669343" />
+        <path d="m17 19 12-7v5l-4 2v3l-4 2v-3l-4 2Z" fill="#44682e" />
+        <path d="m9 8 5-3 4 2-5 3Z" fill="#b1cd7f" />
+        <path d="m19 10 4-2 4 2-4 2Z" fill="#659746" />
+        <path d="m6 23 3 2v3l-3-2Zm5 3 2 1v3l-2-1Z" fill="#aa7950" />
+        <path d="m20 26 3-2v3l-3 2Z" fill="#78543a" /></svg
+    ></span>
     <div><strong>Design Workbench</strong><small>MINECRAFT · 建筑设计工作台</small></div>
   </div>
   <div class="project-bar">
     <select id="projects" aria-label="当前项目"></select
+    ><button id="rename-project" title="重命名当前设计（F2）">重命名</button
     ><button id="new-project">新建</button><button id="import">导入蓝图</button
     ><button id="export" class="primary">导出蓝图</button
     ><input id="import-file" type="file" accept=".litematic" hidden />
   </div>
   <span id="version" class="tag">连接中</span>
+  <button id="help" title="教程与快捷键（?）" aria-haspopup="dialog">? 教程</button>
 </header>
-<main>
-  <aside class="library">
+<main id="workbench-layout">
+  <aside id="library" class="library" aria-label="方块材料面板">
     <div class="panel-title">
       <h2>方块材料</h2>
       <span id="catalog-total"></span>
@@ -43,6 +57,14 @@
   </aside>
   <section class="workspace">
     <div class="toolbar">
+      <button
+        id="toggle-library"
+        aria-controls="library"
+        aria-expanded="true"
+        title="显示 / 隐藏材料面板（[）"
+      >
+        材料
+      </button>
       <div class="tool-tabs">
         <button class="active" data-tool="select">选择</button
         ><button data-tool="place">放置</button><button data-tool="erase">删除</button>
@@ -54,8 +76,19 @@
         <option value="current">当前设计</option>
         <option value="before">上次修改前</option>
       </select>
+      <button id="focus-mode" aria-pressed="false" title="专注视图：收起两侧面板（Tab）">
+        专注
+      </button>
+      <button
+        id="toggle-inspector"
+        aria-controls="inspector"
+        aria-expanded="true"
+        title="显示 / 隐藏工具面板（]）"
+      >
+        工具
+      </button>
     </div>
-    <div id="stage">
+    <div id="stage" tabindex="0" aria-label="三维建筑画布">
       <div class="stage-label">
         <strong id="scene-name">创建你的建筑</strong
         ><span id="scene-meta">拖动旋转 · 右键平移 · 滚轮缩放</span>
@@ -67,14 +100,39 @@
       </div>
       <div id="empty-message">新建项目，或导入已有 .litematic 建筑</div>
     </div>
-    <div class="slice-bar">
-      <label>最高显示层 <input id="layer" type="range" min="-64" max="64" value="64" /></label
-      ><output id="layer-label">全部</output
-      ><span id="selection-hint">点击选中；Shift+点击扩展选区</span>
+    <div class="slice-bar" aria-label="逐层播放控制">
+      <button
+        id="layer-play"
+        class="primary"
+        aria-label="播放逐层建造"
+        aria-pressed="false"
+        title="播放 / 暂停（空格）"
+      >
+        ▶
+      </button>
+      <select id="layer-speed" aria-label="播放速度" title="播放速度">
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+      </select>
+      <button id="layer-prev" aria-label="上一层" title="上一层（←）">◀</button>
+      <input id="layer" type="range" min="0" max="1" value="1" step="1" aria-label="最高显示层" />
+      <button id="layer-next" aria-label="下一层" title="下一层（→）">▶</button>
+      <label class="layer-counter"
+        >第
+        <input id="layer-number" type="number" min="1" max="1" value="1" aria-label="显示层序号" />
+        / <span id="layer-total">0</span> 层</label
+      >
+      <button id="layer-reset" title="停止播放并显示全部层">全部</button>
+    </div>
+    <div class="workspace-meta">
+      <output id="layer-label">暂无方块</output>
+      <span id="selection-hint">点击选中；Shift+点击扩展选区</span>
     </div>
     <div id="warnings" class="warnings" hidden></div>
   </section>
-  <aside class="inspector">
+  <aside id="inspector" class="inspector" aria-label="设计工具面板">
     <div class="panel-title">
       <h2>设计工具</h2>
       <span id="revision" class="tag">修订 0</span>
@@ -136,3 +194,66 @@
   </aside>
 </main>
 <footer><span id="status" role="status">正在连接本地工作台…</span><span id="stats"></span></footer>
+<dialog id="rename-dialog" aria-labelledby="rename-title">
+  <form id="rename-form">
+    <div class="dialog-heading">
+      <h2 id="rename-title">重命名设计</h2>
+      <button type="button" data-close-dialog="rename-dialog" aria-label="关闭重命名">×</button>
+    </div>
+    <p class="muted">名称会自动保存，也可以通过撤销恢复。</p>
+    <label for="project-name">设计名称</label>
+    <input id="project-name" name="name" required maxlength="128" autocomplete="off" />
+    <p id="rename-error" class="error" role="alert"></p>
+    <div class="dialog-actions">
+      <button type="button" data-close-dialog="rename-dialog">取消</button
+      ><button id="rename-submit" type="submit" class="primary">保存名称</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="help-dialog" aria-labelledby="help-title">
+  <div class="dialog-heading">
+    <div>
+      <small class="muted">WORKBENCH GUIDE</small>
+      <h2 id="help-title">教程与快捷键</h2>
+    </div>
+    <button data-close-dialog="help-dialog" aria-label="关闭教程">×</button>
+  </div>
+  <div class="help-steps">
+    <p>
+      <strong>01 · 开始设计</strong><br />新建或导入 .litematic
+      蓝图；也可以在右侧点击“生成简单木屋”开始。
+    </p>
+    <p>
+      <strong>02 · 选择与编辑</strong><br />在左侧挑选材料，用“选择 / 放置 / 删除”操作画布。Shift +
+      点击可扩展选区；右侧工具先预览，再应用。
+    </p>
+    <p>
+      <strong>03 · 查看建造过程</strong
+      ><br />底部播放条从低层向上逐层展示。可拖动进度、输入层号、调整倍速；播放到最后自动暂停。层序号从
+      1 开始，Y 表示实际高度。
+    </p>
+    <p>
+      <strong>04 · 保存与导出</strong
+      ><br />编辑自动保存；重命名在顶部，完成后可导出蓝图。左右面板可分别隐藏，“专注”会收起两侧，再次点击恢复。
+    </p>
+  </div>
+  <div class="shortcut-grid">
+    <span>旋转 / 平移 / 缩放</span><span>左键拖动 / 右键拖动 / 滚轮</span>
+    <span>选择 / 放置 / 删除工具</span><span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span>
+    <span>撤销 / 重做</span
+    ><span><kbd>Ctrl Z</kbd> / <kbd>Ctrl Shift Z</kbd> 或 <kbd>Ctrl Y</kbd></span>
+    <span>保存并重读</span><kbd>Ctrl S</kbd> <span>重命名设计</span><kbd>F2</kbd>
+    <span>播放 / 暂停</span><kbd>Space</kbd> <span>上一层 / 下一层</span
+    ><span><kbd>←</kbd> <kbd>→</kbd></span> <span>隐藏材料 / 工具面板</span
+    ><span><kbd>[</kbd> <kbd>]</kbd></span> <span>进入 / 退出专注视图</span><kbd>Tab</kbd>
+    <span>适配建筑到画布</span><kbd>F</kbd> <span>打开本教程</span><kbd>?</kbd>
+    <span>暂停播放 / 取消预览 / 关闭弹窗</span><kbd>Esc</kbd>
+  </div>
+  <p class="muted">
+    在输入框、下拉框或弹窗中，保留正常输入与键盘操作。Mac 可用 ⌘ 代替 Ctrl。Tab
+    仅在画布或页面背景获得焦点时切换专注视图。
+  </p>
+  <div class="dialog-actions">
+    <button class="primary" data-close-dialog="help-dialog">开始建造</button>
+  </div>
+</dialog>

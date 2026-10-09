@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints
 
 type Position = tuple[StrictInt, StrictInt, StrictInt]
 
@@ -139,6 +139,10 @@ class EditRequest(Contract):
 class HistoryRequest(Contract):
     expected_revision: int = Field(ge=0)
     request_id: str = Field(min_length=1, max_length=128)
+
+
+class RenameRequest(HistoryRequest):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 
 
 class CreateRequest(Contract):

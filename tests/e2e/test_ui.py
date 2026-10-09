@@ -53,6 +53,7 @@ def test_real_browser_edit_history_and_blueprint(tmp_path: Path) -> None:
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(url)
             page.wait_for_function("window.workbench && !window.workbench.busy")
+            assert page.locator("#layer-play").is_disabled()
             page.locator("#cabin").click()
             page.wait_for_function("!window.workbench.busy")
             assert page.evaluate("window.workbench.summary.blocks") == 449
@@ -74,6 +75,151 @@ def test_real_browser_edit_history_and_blueprint(tmp_path: Path) -> None:
             downloaded = tmp_path / "browser.litematic"
             download.value.save_as(str(downloaded))
             assert downloaded.stat().st_size > 100
+            # The one-based playback UI must still send actual Y coordinates to the renderer.
+            page.locator("#layer-speed").select_option("4")
+            page.locator("#layer-play").click()
+            assert page.evaluate("window.workbench.viewer.layer") == 0
+            page.wait_for_function(
+                "document.querySelector('#layer-play').getAttribute('aria-pressed') === 'false'"
+            )
+            assert page.evaluate("window.workbench.viewer.layer") == 10
+            assert page.locator("#layer-number").input_value() == "11"
+            page.locator("#layer-number").fill("2")
+            page.locator("#layer-number").press("Tab")
+            assert page.evaluate("window.workbench.viewer.layer") == 1
+            page.locator("#layer-reset").click()
+            assert page.evaluate("window.workbench.viewer.layer === Infinity")
+
+            width = page.locator("#stage").bounding_box()["width"]
+            page.locator("#toggle-library").click()
+            assert page.locator("#library").is_hidden()
+            assert page.locator("#stage").bounding_box()["width"] > width
+            page.locator("#focus-mode").click()
+            assert page.locator("#library").is_hidden() and page.locator("#inspector").is_hidden()
+            page.locator("#focus-mode").click()
+            assert page.locator("#library").is_hidden() and page.locator("#inspector").is_visible()
+            page.reload()
+            page.wait_for_function("window.workbench && !window.workbench.busy")
+            assert page.locator("#library").is_hidden()
+            page.locator("#toggle-library").click()
+
+            page.locator("#help").click()
+            assert page.locator("#help-dialog").is_visible()
+            page.keyboard.press("Escape")
+            assert page.locator("#help-dialog").is_hidden()
+            page.locator("#stage").focus()
+            page.keyboard.press("2")
+            assert "active" in page.locator('[data-tool="place"]').get_attribute("class")
+            page.keyboard.press("1")
+            page.keyboard.press("F2")
+            page.locator("#project-name").fill("  重命名后的木屋  ")
+            page.locator("#rename-submit").click()
+            page.wait_for_function("!window.workbench.busy")
+            assert page.locator("#rename-dialog").is_hidden()
+            assert page.locator("#scene-name").inner_text() == "重命名后的木屋"
+            assert page.locator("#projects option:checked").inner_text() == "重命名后的木屋"
+            page.locator("#stage").focus()
+            page.keyboard.press("Control+z")
+            page.wait_for_function("!window.workbench.busy")
+            assert page.locator("#scene-name").inner_text() == "我的建筑"
+            page.keyboard.press("Control+Shift+z")
+            page.wait_for_function("!window.workbench.busy")
+            assert page.locator("#scene-name").inner_text() == "重命名后的木屋"
+            page.reload()
+            page.wait_for_function("window.workbench && !window.workbench.busy")
+            assert page.locator("#scene-name").inner_text() == "重命名后的木屋"
+
+            # Negative-height, single-layer and empty projects are common boundary cases.
+            identifier = page.request.post(
+                url + "/api/projects", data={"name": "地下播放测试"}
+            ).json()["project_id"]
+            path = f"{url}/api/projects/{identifier}"
+            page.request.post(
+                path + "/edit",
+                data={
+                    "expected_revision": 0,
+                    "request_id": "negative",
+                    "operations": [
+                        {
+                            "op": "fill",
+                            "bounds": {"low": [0, -3, 0], "high": [0, -1, 0]},
+                            "state": {"name": "stone"},
+                        }
+                    ],
+                },
+            )
+            page.goto(url + f"/?project={identifier}")
+            page.wait_for_function("window.workbench && !window.workbench.busy")
+            assert page.locator("#layer-total").inner_text() == "3"
+            page.locator("#layer-play").click()
+            assert page.evaluate("window.workbench.viewer.layer") == -3
+            page.locator("#layer-play").click()
+            page.locator("#layer-number").fill("99")
+            page.locator("#layer-number").press("Tab")
+            assert page.evaluate("window.workbench.viewer.layer") == -1
+            page.locator("#layer-number").fill("")
+            page.locator("#layer-number").press("Tab")
+            assert page.locator("#layer-number").input_value() == "3"
+            page.locator("#stage").focus()
+            page.keyboard.press("ArrowLeft")
+            assert page.evaluate("window.workbench.viewer.layer") == -2
+            page.keyboard.press("Space")
+            page.keyboard.press("Escape")
+            assert page.locator("#layer-play").get_attribute("aria-pressed") == "false"
+
+            page.request.post(
+                path + "/edit",
+                data={
+                    "expected_revision": 1,
+                    "request_id": "single-layer",
+                    "operations": [
+                        {
+                            "op": "delete",
+                            "selector": {"bounds": {"low": [0, -3, 0], "high": [0, -3, 0]}},
+                        },
+                        {
+                            "op": "delete",
+                            "selector": {"bounds": {"low": [0, -1, 0], "high": [0, -1, 0]}},
+                        },
+                    ],
+                },
+            )
+            page.reload()
+            page.wait_for_function("window.workbench && !window.workbench.busy")
+            assert page.locator("#layer-play").is_disabled()
+            assert page.locator("#layer-total").inner_text() == "1"
+            assert page.locator("#layer-number").input_value() == "1"
+            page.request.post(
+                path + "/edit",
+                data={
+                    "expected_revision": 2,
+                    "request_id": "empty",
+                    "operations": [
+                        {
+                            "op": "delete",
+                            "selector": {"bounds": {"low": [0, -2, 0], "high": [0, -2, 0]}},
+                        }
+                    ],
+                },
+            )
+            page.reload()
+            page.wait_for_function("window.workbench && !window.workbench.busy")
+            assert page.locator("#layer-play").is_disabled()
+            assert page.locator("#layer-total").inner_text() == "0"
+            assert page.locator("#layer-label").inner_text() == "暂无方块"
+
+            # Text entry must not trigger tool or panel shortcuts; narrow screens use overlays.
+            page.locator("#search").focus()
+            page.keyboard.press("]")
+            assert page.locator("#inspector").is_visible()
+            page.set_viewport_size({"width": 390, "height": 844})
+            page.evaluate("localStorage.removeItem('workbench.panels')")
+            page.reload()
+            page.wait_for_function("window.workbench && !window.workbench.busy")
+            assert page.locator("#library").is_hidden() and page.locator("#inspector").is_hidden()
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+            page.locator("#toggle-library").click()
+            assert page.locator("#library").is_visible()
             page.screenshot(path=str(tmp_path / "browser.png"))
             assert not errors
             browser.close()

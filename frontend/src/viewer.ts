@@ -40,7 +40,8 @@ export class Viewer {
       preserveDrawingBuffer: true,
     });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    this.renderer.setClearColor('#eef2f2');
+    const theme = getComputedStyle(document.documentElement);
+    this.renderer.setClearColor(theme.getPropertyValue('--stage-background').trim() || '#eef2f2');
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.append(this.renderer.domElement);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -50,7 +51,12 @@ export class Viewer {
     const sun = new THREE.DirectionalLight(0xffffff, 2.1);
     sun.position.set(-35, 60, 25);
     this.scene.add(sun);
-    const grid = new THREE.GridHelper(128, 128, 0xb1beb9, 0xd6dfda);
+    const grid = new THREE.GridHelper(
+      128,
+      128,
+      new THREE.Color(theme.getPropertyValue('--grid-major').trim() || '#b1beb9'),
+      new THREE.Color(theme.getPropertyValue('--grid-minor').trim() || '#d6dfda'),
+    );
     grid.position.y = -0.01;
     this.scene.add(grid, this.ghosts);
     this.camera.position.set(20, 17, 24);

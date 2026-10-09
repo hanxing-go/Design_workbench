@@ -8,7 +8,7 @@ from design_workbench.domain.editing import Editor, selected
 from design_workbench.domain.errors import WorkbenchError
 from design_workbench.domain.models import Scene
 
-from .contracts import EditRequest, HistoryRequest, Selector
+from .contracts import EditRequest, HistoryRequest, RenameRequest, Selector
 from .ports import FormatAdapter, SceneRepository
 
 LOGGER = logging.getLogger("design_workbench.application")
@@ -30,6 +30,17 @@ class SceneService:
 
     def summary(self) -> dict[str, Any]:
         return {**self.repository.load().summary(), **self.repository.history_info()}
+
+    def rename(self, request: RenameRequest) -> dict[str, Any]:
+        digest = fingerprint("rename", request.model_dump())
+        replay = self.repository.replay(request.request_id, digest)
+        if replay is not None:
+            return replay
+        scene = self.repository.load()
+        scene.name = request.name
+        return self.repository.commit(
+            scene, [], request.expected_revision, request.request_id, digest
+        )
 
     def inspect(self, selector: Selector, limit: int = 128) -> dict[str, Any]:
         scene = self.repository.load()

@@ -341,8 +341,9 @@ export class Viewer {
       generations.join(':') + ':' + Math.max(bottom - 1, Math.min(bottom + 16, this.layer));
     if (this.builtKeys.get(id) === buildKey) return;
     this.builtKeys.set(id, buildKey);
-    this.transparencyDirty = true;
+    const previousParts = this.transparentParts.get(id) ?? [];
     const old = this.meshes.get(id);
+    const hadTexts = old?.children.some((object) => object.userData.signText) ?? false;
     if (old) {
       this.scene.remove(old);
       disposeChunk(old);
@@ -350,7 +351,10 @@ export class Viewer {
     this.meshes.delete(id);
     this.transparentParts.delete(id);
     const cells = this.chunks.get(id);
-    if (!cells) return;
+    if (!cells) {
+      this.transparencyDirty ||= previousParts.length > 0 || hadTexts;
+      return;
+    }
     const group = new THREE.Group();
     group.name = id;
     const opaque = new Map<THREE.Material, GeometryPart[]>();
@@ -429,6 +433,16 @@ export class Viewer {
         for (const cell of batch.cells) addSignText(group, batch.model, cell);
       }
     }
+    const sameTransparency =
+      previousParts.length === transparent.length &&
+      previousParts.every(
+        (part, index) =>
+          part.geometry === transparent[index].geometry &&
+          part.cell.every((value, field) => value === transparent[index].cell[field]),
+      );
+    // Text textures belong to rebuilt chunks: always replace their merged copy.
+    this.transparencyDirty ||=
+      !sameTransparency || hadTexts || group.children.some((object) => object.userData.signText);
     if (transparent.length) this.transparentParts.set(id, transparent);
     for (const [material, parts] of opaque) {
       group.add(mergedChunk(parts, material));

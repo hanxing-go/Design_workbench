@@ -289,3 +289,97 @@ def test_leaf_instance_picking_keeps_group_protection_and_layer_visibility(
         assert all(hit["normal"] == [0, 0, 1] for hit in hits)
     assert result["hidden"] is None
     assert result["instanceDisposed"] == result["geometryDisposed"] == 1
+
+
+@pytest.mark.e2e
+def test_opaque_edits_reuse_transparency_but_state_owners_and_culling_invalidate_it(
+    batching_page: tuple[Page, list[str]],
+) -> None:
+    page, _ = batching_page
+    result = page.evaluate("""async () => {
+      const v=window.workbench.viewer;
+      const names=['blue_stained_glass','red_stained_glass','stone','bricks'];
+      const models=Object.fromEntries(await Promise.all(names.map(async name=>
+        [name,await (await fetch('/api/material/'+name)).json()])));
+      let glass=[15,0,2,'blue_stained_glass','original',false];
+      let opaque=[[17,0,2,'stone','opaque',false]];
+      const update=async()=>{
+        const chunks={'1,0,0':opaque};if(glass)chunks['0,0,0']=[glass];
+        v.update({revision:0,resource_hash:v.resourceHash,summary:{occupied_bounds:null},
+          chunks,removed_chunks:[...v.chunks.keys()].filter(k=>!(k in chunks)),
+          chunk_versions:{},models,atlas:models.stone.atlas});
+        await v.whenReady();v.drawNow();return v.transparency;
+      };
+      const first=await update(),full=first.mesh.geometry.attributes.position.count;
+      opaque=[[17,0,2,'bricks','edited',false]];
+      const reused=await update()===first;
+      glass=[15,0,2,'blue_stained_glass','updated',true];
+      const changedOwner=await update(),ownerRebuilt=changedOwner!==first;
+      const center=v.camera.position.clone().set(15.5,.5,2.5);
+      v.controls.target.copy(center);v.camera.position.copy(center);v.camera.position.z+=5;
+      v.controls.update();v.camera.updateMatrixWorld();v.drawNow();
+      const rect=v.renderer.domElement.getBoundingClientRect();
+      const hit=v.pick(new PointerEvent('pointerup',{
+        clientX:rect.x+rect.width/2,clientY:rect.y+rect.height/2}));
+      glass=[15,0,2,'red_stained_glass','updated',true];
+      const changedState=await update(),stateRebuilt=changedState!==changedOwner;
+      opaque=[...opaque,[16,0,2,'stone','occluder',false]];
+      const hidden=await update(),hiddenCount=hidden.mesh.geometry.attributes.position.count;
+      opaque=opaque.slice(0,-1);
+      const revealed=await update(),revealedCount=revealed.mesh.geometry.attributes.position.count;
+      glass=null;await update();
+      return {reused,ownerRebuilt,stateRebuilt,hit,full,hiddenCount,revealedCount,
+        neighbourRebuilt:hidden!==changedState&&revealed!==hidden,
+        removed:v.transparency===null};
+    }""")
+    assert result["reused"] and result["ownerRebuilt"] and result["stateRebuilt"]
+    assert result["hit"]["position"] == [15, 0, 2]
+    assert result["hit"]["group"] == "updated" and result["hit"]["protected"]
+    assert result["neighbourRebuilt"]
+    assert result["hiddenCount"] == result["full"] - 6
+    assert result["revealedCount"] == result["full"]
+    assert result["removed"]
+    assert page.evaluate(OWNER_POINTS) == ["17,0,2"]
+
+
+@pytest.mark.e2e
+def test_rebuilt_sign_text_replaces_merged_texture_even_when_glass_is_unchanged(
+    batching_page: tuple[Page, list[str]],
+) -> None:
+    page, _ = batching_page
+    result = page.evaluate("""async () => {
+      const v=window.workbench.viewer;
+      const [glass,sign,stone,bricks]=await Promise.all(
+        ['blue_stained_glass','oak_sign','stone','bricks'].map(async name=>
+          await (await fetch('/api/material/'+name)).json()));
+      let text='before',opaque='stone';
+      const update=async()=>{
+        const models={glass,stone,bricks,sign:{...sign,
+          texts:[{lines:[text,'','',''],color:'black',glowing:false}]}};
+        v.update({revision:0,resource_hash:v.resourceHash,summary:{occupied_bounds:null},
+          chunks:{'0,0,0':[[0,0,2,'glass','glass',false],[2,0,2,'sign','sign',false],
+            [4,0,2,opaque,'opaque',false]]},
+          removed_chunks:[...v.chunks.keys()].filter(k=>k!=='0,0,0'),
+          chunk_versions:{},models,atlas:glass.atlas});
+        await v.whenReady();v.drawNow();return v.transparency;
+      };
+      const first=await update();
+      const oldText=v.meshes.get('0,0,0').children.find(o=>o.userData.signText);
+      let textureDisposed=0;oldText.material.map.addEventListener('dispose',()=>textureDisposed++);
+      opaque='bricks';const second=await update();
+      const currentText=v.meshes.get('0,0,0').children.find(o=>o.userData.signText);
+      const textureInMerged=second.mesh.material.some(m=>m.map===currentText.material.map);
+      const before=currentText.material.map.image.toDataURL();
+      text='after';const third=await update();
+      const nextText=v.meshes.get('0,0,0').children.find(o=>o.userData.signText);
+      const after=nextText.material.map.image.toDataURL();
+      v.update({revision:0,resource_hash:v.resourceHash,summary:{occupied_bounds:null},
+        chunks:{'0,0,0':[[0,0,2,'glass','glass',false]]},removed_chunks:[],
+        chunk_versions:{},models:{glass},atlas:glass.atlas});
+      await v.whenReady();v.drawNow();
+      return {rebuilt:first!==second&&second!==third,textureDisposed,textureInMerged,
+        textChanged:before!==after,onlyGlass:v.transparency.mesh.material.length===1};
+    }""")
+    assert result["rebuilt"] and result["textureDisposed"] == 1
+    assert result["textureInMerged"] and result["textChanged"] and result["onlyGlass"]
+    assert page.evaluate(OWNER_POINTS) == ["0,0,2"]

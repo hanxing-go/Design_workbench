@@ -4,6 +4,8 @@
 
 **P1–P5 已完成，交付点 A：人可使用的设计工作台。** 当前支持 Minecraft Java **1.20.1 / DataVersion 3465**。MCP 与自主 AI 设计分别属于后续 P6、P7，目前未实现。
 
+公开仓库：<https://github.com/hanxing-go/Design_workbench>。`v0.1.0` 保存 P1–P5 的交付版本，开发与版本管理约定见 [贡献指南](CONTRIBUTING.md)。
+
 ## 直接启动本机项目
 
 项目位置：`D:\Study\program\Design_workbench`。依赖和官方素材已配置，PowerShell 中运行：
@@ -31,6 +33,8 @@ cd D:\Study\program\Design_workbench
 需要 Python 3.12、uv；修改前端需要 Node.js 22+。已打包运行时不需要 Node.js，也不通过 CDN 加载前端。
 
 ```powershell
+git clone https://github.com/hanxing-go/Design_workbench.git
+cd Design_workbench
 uv sync --locked --extra gui
 npm.cmd ci --prefix frontend
 npm.cmd run build --prefix frontend

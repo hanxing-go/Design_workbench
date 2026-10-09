@@ -22,4 +22,7 @@ frontend/dist/
 artifacts/**
 !artifacts/.gitkeep
 .env
+.env.*
+!.env.example
+config.local.toml
 *.log

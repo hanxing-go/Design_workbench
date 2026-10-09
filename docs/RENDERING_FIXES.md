@@ -34,6 +34,8 @@
 
 实际浏览器验证特殊模型进入场景、透明玻璃后方标记对像素产生影响、缩略图、一键放置完整床，以及导入告示牌正反面文字；重新导出的告示牌 NBT 与输入相同。截图保留在被 Git 忽略的 `artifacts/render-fixes/`。
 
+Windows 本地 36 项 pytest、Ruff、strict mypy、TypeScript/Prettier、前端构建及干净 wheel 安装通过。[对应修复的 GitHub Actions](https://github.com/hanxing-go/Design_workbench/actions/runs/37947455111) 中 Windows/Linux 核心与安装检查、Ubuntu 官方资源与真实浏览器测试全部通过。独立 litemapy 重新核对木屋和教堂的全部状态/坐标、教堂 67 个方块实体保留通过。
+
 注册表 1,003 块、24,135 状态的资源审计：23,399 static、655 special、81 invisible、0 missing。static 表示已有静态预览，不等于游戏渲染逐像素一致。其余专用方块仍按原机制显示限制。
 
 水/岩浆没有纹理动画、自动扩散、流向动画或流体更新队列模拟；含水方块保存 waterlogged 状态，但没有叠加水体预览。告示牌字体使用浏览器字体，富文本样式、翻译组件、游戏字体及发光效果只作近似；本次不增加文字编辑。床的原子补齐用于放置工具及显式请求，普通逐格填充/删除仍属于体素编辑，可能产生不完整部件，需结构检查或同时选择完整床。

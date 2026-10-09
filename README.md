@@ -70,6 +70,9 @@ uv run python scripts/install_smoke.py
 | [当前能力](docs/CURRENT_CAPABILITIES.md) | 已实现内容和后续缺口 |
 | [快速开始](docs/QUICKSTART.md) | 本机启动、全新安装、GUI 流程及验证 |
 | [架构](docs/ARCHITECTURE.md) | Python 领域/应用/适配器/接口与前端边界 |
+| [性能计划](docs/PERFORMANCE_PLAN.md) | 渲染瓶颈、优化顺序及客户端方案 |
+| [显示修复](docs/RENDERING_FIXES.md) | 特殊方块、透明材质及 MC 版本边界 |
+| [多版本计划](docs/VERSION_SUPPORT.md) | 当前支持范围和新增版本的配套要求 |
 | [工程规范](docs/ENGINEERING.md) | 类型、锁文件、事务恢复、检查与发布 |
 | [API 和数据契约](docs/API_AND_DATA.md) | 操作格式、修订、幂等、配置和恢复 |
 | [资源与兼容范围](docs/RESOURCES_AND_LIMITS.md) | 来源、版本、静态预览和 NBT 限制 |

@@ -1,0 +1,10 @@
+# Paths are relative to this configuration file. Environment DW_* overrides TOML.
+data_dir = ".local/data"
+cache_dir = ".local/cache"
+log_dir = ".local/logs"
+minecraft_version = "1.20.1"
+max_blocks = 250000
+max_edit_cells = 500000
+max_selection_volume = 2000000
+max_operations = 256
+database_timeout = 10.0

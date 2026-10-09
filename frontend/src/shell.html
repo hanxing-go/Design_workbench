@@ -1,0 +1,138 @@
+<header>
+  <div class="brand">
+    <span class="brand-mark">▧</span>
+    <div><strong>Design Workbench</strong><small>MINECRAFT · 建筑设计工作台</small></div>
+  </div>
+  <div class="project-bar">
+    <select id="projects" aria-label="当前项目"></select
+    ><button id="new-project">新建</button><button id="import">导入蓝图</button
+    ><button id="export" class="primary">导出蓝图</button
+    ><input id="import-file" type="file" accept=".litematic" hidden />
+  </div>
+  <span id="version" class="tag">连接中</span>
+</header>
+<main>
+  <aside class="library">
+    <div class="panel-title">
+      <h2>方块材料</h2>
+      <span id="catalog-total"></span>
+    </div>
+    <input id="search" placeholder="搜索中文名称 / 方块 ID" aria-label="搜索材料" /><select
+      id="category"
+      aria-label="材料类别"
+    >
+      <option value="">全部类别</option>
+      <option>木材</option>
+      <option>构造</option>
+      <option>门窗</option>
+      <option>植物</option>
+      <option>色彩</option>
+      <option>其他</option>
+    </select>
+    <div id="materials" class="materials"></div>
+    <div class="pagination">
+      <button id="prev-page">上一页</button><span id="page"></span
+      ><button id="next-page">下一页</button>
+    </div>
+    <div class="material-detail">
+      <h3 id="material-name">选择材料</h3>
+      <code id="material-id"></code>
+      <div id="material-support"></div>
+      <div id="properties"></div>
+    </div>
+  </aside>
+  <section class="workspace">
+    <div class="toolbar">
+      <div class="tool-tabs">
+        <button class="active" data-tool="select">选择</button
+        ><button data-tool="place">放置</button><button data-tool="erase">删除</button>
+      </div>
+      <button id="undo" title="Ctrl+Z">撤销</button
+      ><button id="redo" title="Ctrl+Shift+Z">重做</button><button id="save">保存 / 重读</button>
+      <div class="spacer"></div>
+      <select id="compare" aria-label="版本对比">
+        <option value="current">当前设计</option>
+        <option value="before">上次修改前</option>
+      </select>
+    </div>
+    <div id="stage">
+      <div class="stage-label">
+        <strong id="scene-name">创建你的建筑</strong
+        ><span id="scene-meta">拖动旋转 · 右键平移 · 滚轮缩放</span>
+      </div>
+      <div class="camera-bar">
+        <button data-view="iso">等距</button><button data-view="front">正面</button
+        ><button data-view="side">侧面</button><button data-view="top">顶视</button
+        ><button id="fit">适配</button>
+      </div>
+      <div id="empty-message">新建项目，或导入已有 .litematic 建筑</div>
+    </div>
+    <div class="slice-bar">
+      <label>最高显示层 <input id="layer" type="range" min="-64" max="64" value="64" /></label
+      ><output id="layer-label">全部</output
+      ><span id="selection-hint">点击选中；Shift+点击扩展选区</span>
+    </div>
+    <div id="warnings" class="warnings" hidden></div>
+  </section>
+  <aside class="inspector">
+    <div class="panel-title">
+      <h2>设计工具</h2>
+      <span id="revision" class="tag">修订 0</span>
+    </div>
+    <section>
+      <h3>选区</h3>
+      <div class="coordinates">
+        <label>起点 <input id="low" value="0,0,0" aria-label="选区起点" /></label
+        ><label>终点 <input id="high" value="6,4,8" aria-label="选区终点" /></label>
+      </div>
+      <button id="select-bounds">应用选区</button
+      ><label
+        >分组
+        <select id="group-filter">
+          <option value="">当前选区</option>
+        </select></label
+      >
+      <div id="group-tree" class="group-tree"></div>
+    </section>
+    <section>
+      <h3>编辑与构形</h3>
+      <label
+        >工具
+        <select id="operation">
+          <option value="fill">盒体填充</option>
+          <option value="replace">替换材料</option>
+          <option value="delete">删除选区</option>
+          <option value="transform">移动 / 复制 / 旋转 / 镜像</option>
+          <option value="array">阵列</option>
+          <option value="extrude">轮廓挤出</option>
+          <option value="arc">圆弧</option>
+          <option value="roof">双坡屋顶</option>
+          <option value="window">窗组</option>
+          <option value="group">设置分组</option>
+        </select></label
+      ><label>结果分组 <input id="result-group" value="main" /></label>
+      <div id="operation-fields"></div>
+      <div class="action-row">
+        <button id="preview">预览修改</button><button id="commit" class="primary">应用修改</button>
+      </div>
+      <button id="cancel-preview" hidden>取消预览</button>
+      <p id="preview-description" class="muted"></p>
+    </section>
+    <section>
+      <h3>结构检查</h3>
+      <button id="check">检查部件与连接</button>
+      <p id="check-result" class="muted">检查门、床、楼梯与常见连接块。</p>
+      <button id="apply-rules" hidden>预览规范化建议</button>
+    </section>
+    <section>
+      <h3>起稿</h3>
+      <button id="cabin">生成简单木屋</button>
+      <p class="muted">生成后，每个方块仍可自由编辑。</p>
+    </section>
+    <section>
+      <h3>历史</h3>
+      <div id="history" class="history muted">尚无修改</div>
+    </section>
+  </aside>
+</main>
+<footer><span id="status" role="status">正在连接本地工作台…</span><span id="stats"></span></footer>

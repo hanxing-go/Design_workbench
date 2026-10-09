@@ -1,0 +1,1 @@
+"""Minecraft asset formats."""

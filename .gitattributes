@@ -1,0 +1,12 @@
+* text=auto eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.png binary
+*.litematic binary
+# Preserve whitespace inside upstream GLSL strings and the upstream source notice.
+src/design_workbench/static/assets/* whitespace=-blank-at-eol
+src/design_workbench/data/minecraft-data-SOURCE.md whitespace=-blank-at-eol

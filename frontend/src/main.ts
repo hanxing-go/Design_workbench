@@ -40,6 +40,7 @@ let project = '',
 let previewBody: Record<string, unknown> | null = null,
   previous: Packet | null = null,
   latest: Packet | null = null;
+let paintingVariant: string | null = null;
 let ruleProposals: unknown[] = [];
 const params = new URLSearchParams(location.search);
 const setBusy = (value: boolean) => {
@@ -241,6 +242,7 @@ async function loadCatalog() {
 }
 async function chooseMaterial(item: Material) {
   material = item;
+  paintingVariant = null;
   currentState = { ...item.default_state, properties: { ...item.default_state.properties } };
   el('material-name').textContent = item.chinese_name;
   el('material-id').textContent = item.name;
@@ -427,21 +429,84 @@ viewer.onHit = (hit, event) =>
         hit.protected ? '此格包含保留的实体内容；当前只能查看' : `选中 ${position.join(',')}`,
       );
     } else if (tool === 'place') {
+      if (hit.painting) throw new Error('请点击支撑方块表面');
       const target = hit.position.map((v, i) => v + hit.normal[i]) as Point;
-      await commit([
-        {
-          op: 'set',
-          complete_beds: currentState.name.endsWith('_bed'),
-          blocks: [{ position: target, state: currentState, group: input('result-group') }],
-        },
-      ]);
+      const faces: Record<string, string> = {
+        '0,1,0': 'up',
+        '0,-1,0': 'down',
+        '0,0,-1': 'north',
+        '0,0,1': 'south',
+        '1,0,0': 'east',
+        '-1,0,0': 'west',
+      };
+      const face = faces[hit.normal.join(',')];
+      if (paintingVariant !== null) {
+        if (face === 'up' || face === 'down') throw new Error('画需要竖直墙面');
+        await commit([
+          {
+            op: 'painting',
+            support: hit.position,
+            face: el<HTMLInputElement>('auto-snap').checked ? face : input('painting-facing'),
+            variant: paintingVariant,
+          },
+        ]);
+      } else if (el<HTMLInputElement>('auto-snap').checked) {
+        const direction = viewer.controls.target.clone().sub(viewer.camera.position);
+        const heading =
+          Math.abs(direction.x) > Math.abs(direction.z)
+            ? direction.x > 0
+              ? 'east'
+              : 'west'
+            : direction.z > 0
+              ? 'south'
+              : 'north';
+        await commit([
+          {
+            op: 'place',
+            support: hit.position,
+            face,
+            heading,
+            ground: hit.ground,
+            hit_height: hit.height ?? 0.5,
+            state: currentState,
+            group: input('result-group'),
+          },
+        ]);
+      } else {
+        await commit([
+          {
+            op: 'set',
+            complete_beds: currentState.name.endsWith('_bed'),
+            blocks: [{ position: target, state: currentState, group: input('result-group') }],
+          },
+        ]);
+      }
     } else if (!hit.ground) {
-      await commit([
-        { op: 'delete', selector: { bounds: { low: hit.position, high: hit.position } } },
-      ]);
+      if (hit.painting) {
+        if (hit.protected) throw new Error('导入的画为只读实体，原始 NBT 会保留');
+        await commit([{ op: 'delete_painting', id: hit.painting }]);
+      } else
+        await commit([
+          { op: 'delete', selector: { bounds: { low: hit.position, high: hit.position } } },
+        ]);
     }
   });
 
+el<HTMLInputElement>('auto-snap').onchange = () => {
+  message(
+    el<HTMLInputElement>('auto-snap').checked
+      ? '自动吸附已开启；本次放置按点击面定向'
+      : '自动吸附已关闭；使用手动属性',
+  );
+};
+el('painting-variant').onchange = () => {
+  if (paintingVariant !== null) paintingVariant = input('painting-variant');
+};
+el('choose-painting').onclick = () => {
+  paintingVariant = input('painting-variant');
+  document.querySelector<HTMLButtonElement>('[data-tool="place"]')!.click();
+  message('已选择画：点击墙面挂画；图案和手动朝向可在左侧调整');
+};
 function bind(id: string, action: () => Promise<void>) {
   el(id).onclick = () => void safely(action);
 }
@@ -687,6 +752,13 @@ void safely(async () => {
   if (!info.resources_ready)
     throw new Error('尚未配置素材。先运行 design-workbench resources setup，再重启服务。');
   await viewer.initializeTexture();
+  const paintings = await api<{ items: { name: string; width: number; height: number }[] }>(
+    '/api/paintings',
+  );
+  el('painting-variant').replaceChildren(
+    new Option('自动选择最大可挂图案', 'auto'),
+    ...paintings.items.map((p) => new Option(`${p.name} · ${p.width}×${p.height}`, p.name)),
+  );
   await loadProjects(params.get('project') ?? undefined);
   await loadCatalog();
   const data = await api<{ items: Material[] }>('/api/catalog?query=oak_planks&limit=1');

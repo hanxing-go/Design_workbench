@@ -47,7 +47,17 @@ export interface Summary {
   undo_available: number;
   redo_available: number;
 }
+export interface Painting {
+  id: string;
+  anchor: Point;
+  facing: string;
+  variant: string;
+  protected: boolean;
+  texture: string;
+  vertices: number[];
+}
 export interface Packet {
+  paintings?: Painting[];
   revision: number;
   summary: Summary;
   chunks: Record<string, RenderCell[]>;

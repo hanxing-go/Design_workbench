@@ -8,6 +8,7 @@ from design_workbench.domain.models import Cell, Point, Scene, chunk_key
 from ..resources.catalog import Catalog
 from ..resources.pack import ResourcePack
 from .fluids import fluid_model
+from .paintings import painting_packet
 from .signs import sign_texts
 
 
@@ -90,4 +91,5 @@ def render_packet(
         "warnings": list(warnings.values()),
         "atlas": pack.atlas,
         "resource_hash": pack.manifest["bundle_hash"],
+        "paintings": painting_packet(scene, source),
     }

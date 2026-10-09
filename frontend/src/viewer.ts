@@ -1,9 +1,18 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { addSignText, disposeChunk } from './signText';
+import { updatePaintings, paintingAt, slicePaintings } from './paintings';
 import type { Atlas, Face, Model, Packet, Point, RenderCell, Selection } from './types';
 
-type Hit = { position: Point; normal: Point; group: string; protected: boolean; ground: boolean };
+type Hit = {
+  position: Point;
+  normal: Point;
+  group: string;
+  protected: boolean;
+  ground: boolean;
+  height?: number;
+  painting?: string;
+};
 const key = (p: readonly number[]) => p.join(',');
 
 export class Viewer {
@@ -23,6 +32,7 @@ export class Viewer {
   emissive!: THREE.MeshBasicMaterial;
   selection: THREE.Box3Helper | null = null;
   ghosts = new THREE.Group();
+  paintings = new THREE.Group();
   layer = Infinity;
   fitted = false;
   frames = 0;
@@ -52,7 +62,7 @@ export class Viewer {
     this.scene.add(sun);
     const grid = new THREE.GridHelper(128, 128, 0xb1beb9, 0xd6dfda);
     grid.position.y = -0.01;
-    this.scene.add(grid, this.ghosts);
+    this.scene.add(grid, this.ghosts, this.paintings);
     this.camera.position.set(20, 17, 24);
     this.controls.target.set(0, 3, 0);
     this.controls.update();
@@ -135,6 +145,8 @@ export class Viewer {
     for (const [id, cells] of Object.entries(packet.chunks)) this.chunks.set(id, cells);
     for (const id of packet.removed_chunks) this.chunks.delete(id);
     this.versions = packet.chunk_versions;
+    updatePaintings(this.paintings, packet.paintings ?? [], this.atlas, this.material);
+    slicePaintings(this.paintings, this.layer);
     for (const id of [...changed]) {
       const p = id.split(',').map(Number);
       for (const d of [
@@ -276,6 +288,7 @@ export class Viewer {
 
   setLayer(layer: number) {
     this.layer = layer;
+    slicePaintings(this.paintings, layer);
     const occupied = this.occupied();
     for (const id of this.chunks.keys()) this.rebuild(id, occupied);
     this.requestDraw();
@@ -377,9 +390,28 @@ export class Viewer {
       ),
       this.camera,
     );
-    const objects = [...this.meshes.values()].flatMap((group) => group.children);
+    const objects = [...this.meshes.values()]
+      .flatMap((group) => group.children)
+      .concat(this.paintings.children.filter((m) => m.visible));
     const intersections = this.ray.intersectObjects(objects, false);
     const hit = intersections[0];
+    const painting = hit && paintingAt(hit.object);
+    if (painting) {
+      const vectors: Record<string, Point> = {
+        north: [0, 0, -1],
+        south: [0, 0, 1],
+        east: [1, 0, 0],
+        west: [-1, 0, 0],
+      };
+      return {
+        position: painting.anchor,
+        normal: vectors[painting.facing],
+        group: '画',
+        protected: painting.protected,
+        ground: false,
+        painting: painting.id,
+      };
+    }
     if (hit && hit.instanceId !== undefined) {
       const cell: RenderCell = hit.object.userData.cells[hit.instanceId];
       const n = hit.face?.normal ?? new THREE.Vector3(0, 1, 0);
@@ -397,6 +429,7 @@ export class Viewer {
         group: cell[4],
         protected: cell[5],
         ground: false,
+        height: Math.min(1, Math.max(0, hit.point.y - cell[1])),
       };
     }
     const point = this.ray.ray.intersectPlane(

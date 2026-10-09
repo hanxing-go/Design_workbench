@@ -391,6 +391,29 @@ export class Viewer {
     for (const batch of batches.values()) {
       const geometry = this.geometry(batch.id, batch.model.faces, batch.mask);
       if (!geometry.attributes.position.count) continue;
+      if (batch.model.render_layer === 'cutout' && batch.model.name.endsWith('_leaves')) {
+        // Preserve leaf instance transforms and object sorting: neighbouring
+        // double-sided alpha-tested faces can compete at the same depth.
+        // The chunk owns its GPU geometry even if the source cache is evicted.
+        const mesh = new THREE.InstancedMesh(
+          geometry.clone(),
+          this.materialFor(batch.model),
+          batch.cells.length,
+        );
+        const matrix = new THREE.Matrix4();
+        batch.cells.forEach((cell, index) => {
+          matrix.makeTranslation(cell[0], cell[1], cell[2]);
+          mesh.setMatrixAt(index, matrix);
+        });
+        mesh.userData.cells = batch.cells;
+        mesh.userData.chunkGeometry = true;
+        mesh.computeBoundingSphere();
+        group.add(mesh);
+        if (batch.model.texts) {
+          for (const cell of batch.cells) addSignText(group, batch.model, cell);
+        }
+        continue;
+      }
       if (batch.model.render_layer !== 'translucent') {
         const material = this.materialFor(batch.model);
         let parts = opaque.get(material);
@@ -520,6 +543,7 @@ export class Viewer {
     for (const object of [...this.ghosts.children]) {
       this.ghosts.remove(object);
       if (object instanceof THREE.InstancedMesh) {
+        object.dispose();
         object.geometry.dispose();
         (object.material as THREE.Material).dispose();
       }

@@ -76,7 +76,7 @@ def batching_page(tmp_path: Path) -> Iterator[tuple[Page, list[str]]]:
             assert response.is_success, response.text
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
-                channel=os.environ.get("DW_BROWSER_CHANNEL", "chrome"), headless=True
+                channel=os.environ.get("DW_BROWSER_CHANNEL"), headless=True
             )
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             errors = []
@@ -247,3 +247,45 @@ def test_resource_hash_refreshes_atlas_and_disposes_replaced_texture(
     assert result["sameMap"] and result["hash"] == "atlas-blue"
     assert result["thumbnailCount"] == 0
     assert page.evaluate(OWNER_POINTS) == ["0,0,0"]
+
+
+@pytest.mark.e2e
+def test_leaf_instance_picking_keeps_group_protection_and_layer_visibility(
+    batching_page: tuple[Page, list[str]],
+) -> None:
+    page, _ = batching_page
+    result = page.evaluate("""async () => {
+      const v=window.workbench.viewer;
+      const leaves=await (await fetch('/api/material/oak_leaves')).json();
+      const cells=[[15,15,2,'leaf','lower',false],[16,16,2,'leaf','upper',true]];
+      v.update({revision:0,resource_hash:v.resourceHash,summary:{occupied_bounds:null},
+        chunks:{'0,0,0':[cells[0]],'1,1,0':[cells[1]]},
+        removed_chunks:[...v.chunks.keys()].filter(k=>!['0,0,0','1,1,0'].includes(k)),
+        chunk_versions:{},models:{leaf:leaves},atlas:leaves.atlas});
+      await v.whenReady();
+      const pick=cell=>{
+        const center=v.camera.position.clone().set(cell[0]+.5,cell[1]+.5,cell[2]+.5);
+        v.controls.target.copy(center);v.camera.position.copy(center);v.camera.position.z+=5;
+        v.controls.update();v.camera.updateMatrixWorld();v.drawNow();
+        const rect=v.renderer.domElement.getBoundingClientRect();
+        return v.pick(new PointerEvent('pointerup',{
+          clientX:rect.x+rect.width/2,clientY:rect.y+rect.height/2}));
+      };
+      const original=cells.map(pick);
+      const upper=v.meshes.get('1,1,0').children.find(object=>object.isInstancedMesh);
+      let instanceDisposed=0,geometryDisposed=0;
+      upper.addEventListener('dispose',()=>instanceDisposed++);
+      upper.geometry.addEventListener('dispose',()=>geometryDisposed++);
+      v.setLayer(15);await v.whenReady();
+      const hidden=pick(cells[1]);
+      v.setLayer(Infinity);await v.whenReady();
+      return {original,hidden,restored:cells.map(pick),
+        instanceDisposed,geometryDisposed};
+    }""")
+    for hits in (result["original"], result["restored"]):
+        assert [hit["position"] for hit in hits] == [[15, 15, 2], [16, 16, 2]]
+        assert [hit["group"] for hit in hits] == ["lower", "upper"]
+        assert [hit["protected"] for hit in hits] == [False, True]
+        assert all(hit["normal"] == [0, 0, 1] for hit in hits)
+    assert result["hidden"] is None
+    assert result["instanceDisposed"] == result["geometryDisposed"] == 1

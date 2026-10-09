@@ -21,11 +21,15 @@ export interface Face {
   uv: number[];
   texture: string;
   tint: boolean;
+  color?: string;
   cull: Point | null;
 }
 export interface Model extends State, Support {
   faces: Face[];
+  text_planes?: number[][];
+  texts?: { lines: string[]; color: string; glowing: boolean }[];
   opaque_cube: boolean;
+  render_layer?: 'opaque' | 'cutout' | 'translucent' | 'emissive';
 }
 export interface Atlas {
   width: number;

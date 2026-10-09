@@ -34,6 +34,7 @@ class PlacedBlock(Contract):
 
 class SetBlocks(Contract):
     op: Literal["set"]
+    complete_beds: bool = False
     blocks: list[PlacedBlock] = Field(min_length=1, max_length=500_000)
 
 

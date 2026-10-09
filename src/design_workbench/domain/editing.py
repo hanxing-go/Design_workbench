@@ -197,11 +197,18 @@ class Editor:
             group = operation.get("group", "main")
             if kind == "set":
                 for block in operation["blocks"]:
-                    put(
-                        as_point(block["position"]),
-                        operation_state(block),
-                        block.get("group", group),
-                    )
+                    point, state = as_point(block["position"]), operation_state(block)
+                    block_group = block.get("group", group)
+                    if operation.get("complete_beds") and state.name.endswith("_bed"):
+                        other = partner(point, Cell(state, block_group, "design"))
+                        if other is None:
+                            raise WorkbenchError("INVALID_STATE", "床缺少朝向。")
+                        if any(p in cells and not cells[p].state.is_air for p in (point, other)):
+                            raise WorkbenchError("EDIT_COLLISION", "床的两格位置必须为空。")
+                        properties = dict(state.properties)
+                        properties["part"] = "head" if properties["part"] == "foot" else "foot"
+                        put(other, BlockState.make(state.name, properties), block_group)
+                    put(point, state, block_group)
             elif kind == "fill":
                 bounds = as_bounds(operation["bounds"])
                 if bounds.volume > self.limits.max_cells:

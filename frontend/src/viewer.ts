@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { addSignText, disposeChunk } from './signText';
 import type { Atlas, Face, Model, Packet, Point, RenderCell, Selection } from './types';
 
 type Hit = { position: Point; normal: Point; group: string; protected: boolean; ground: boolean };
@@ -18,6 +19,8 @@ export class Viewer {
   atlas!: Atlas;
   texture!: THREE.Texture;
   material!: THREE.MeshLambertMaterial;
+  translucent!: THREE.MeshLambertMaterial;
+  emissive!: THREE.MeshBasicMaterial;
   selection: THREE.Box3Helper | null = null;
   ghosts = new THREE.Group();
   layer = Infinity;
@@ -80,6 +83,27 @@ export class Viewer {
       side: THREE.DoubleSide,
       vertexColors: true,
     });
+    this.translucent = new THREE.MeshLambertMaterial({
+      map: this.texture,
+      side: THREE.DoubleSide,
+      vertexColors: true,
+      transparent: true,
+      alphaTest: 0.01,
+      depthWrite: false,
+    });
+    this.emissive = new THREE.MeshBasicMaterial({
+      map: this.texture,
+      side: THREE.DoubleSide,
+      vertexColors: true,
+    });
+  }
+
+  materialFor(model: Model): THREE.Material {
+    return model.render_layer === 'translucent'
+      ? this.translucent
+      : model.render_layer === 'emissive'
+        ? this.emissive
+        : this.material;
   }
 
   resize() {
@@ -156,8 +180,9 @@ export class Viewer {
       if (mask[index] === '0') continue;
       const rect = this.atlas.uv[face.texture];
       if (!rect) continue;
-      const tint =
-        face.tint && !model.name.includes('cherry')
+      const tint = face.color
+        ? new THREE.Color(face.color)
+        : face.tint && !model.name.includes('cherry')
           ? new THREE.Color('#91ae63')
           : new THREE.Color('#ffffff');
       for (const vertex of [0, 1, 2, 0, 2, 3]) {
@@ -180,7 +205,10 @@ export class Viewer {
 
   rebuild(id: string, occupied: Map<string, RenderCell>) {
     const old = this.meshes.get(id);
-    if (old) this.scene.remove(old);
+    if (old) {
+      this.scene.remove(old);
+      disposeChunk(old);
+    }
     this.meshes.delete(id);
     const cells = this.chunks.get(id);
     if (!cells) return;
@@ -203,13 +231,19 @@ export class Viewer {
           if (!neighbour) return '1';
           const adjacent = this.models.get(neighbour[3]);
           return adjacent?.opaque_cube ||
-            (model.name.includes('glass') && adjacent?.name === model.name)
+            ((model.name.includes('glass') ||
+              model.name === 'minecraft:water' ||
+              model.name === 'minecraft:lava') &&
+              adjacent?.name === model.name)
             ? '0'
             : '1';
         })
         .join('');
       if (!mask.includes('1')) continue;
-      const batchKey = cell[3] + ':' + mask;
+      const batchKey =
+        (model.render_layer === 'translucent' ? key([cell[0], cell[1], cell[2]]) : cell[3]) +
+        ':' +
+        mask;
       if (!batches.has(batchKey)) batches.set(batchKey, { model, id: cell[3], mask, cells: [] });
       batches.get(batchKey)!.cells.push(cell);
     }
@@ -217,14 +251,24 @@ export class Viewer {
     for (const batch of batches.values()) {
       const geometry = this.geometry(batch.id, batch.model.faces, batch.mask);
       if (!geometry.attributes.position.count) continue;
-      const mesh = new THREE.InstancedMesh(geometry, this.material, batch.cells.length);
+      const mesh = new THREE.InstancedMesh(
+        geometry,
+        this.materialFor(batch.model),
+        batch.cells.length,
+      );
       batch.cells.forEach((cell, index) => {
-        matrix.makeTranslation(cell[0], cell[1], cell[2]);
+        if (batch.model.render_layer === 'translucent') {
+          mesh.position.set(cell[0], cell[1], cell[2]);
+          matrix.identity();
+        } else matrix.makeTranslation(cell[0], cell[1], cell[2]);
         mesh.setMatrixAt(index, matrix);
       });
       mesh.userData.cells = batch.cells;
       mesh.computeBoundingSphere();
       group.add(mesh);
+      if (batch.model.texts) {
+        for (const cell of batch.cells) addSignText(group, batch.model, cell);
+      }
     }
     this.meshes.set(id, group);
     this.scene.add(group);
@@ -379,7 +423,7 @@ export class Viewer {
     const id = 'thumb:' + JSON.stringify(model);
     this.models.set(id, model);
     const geometry = this.geometry(id, model.faces, '1'.repeat(model.faces.length));
-    temporary.add(new THREE.Mesh(geometry, this.material));
+    temporary.add(new THREE.Mesh(geometry, this.materialFor(model)));
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
     camera.position.set(2.4, 1.9, 2.6);
     camera.lookAt(0.5, 0.5, 0.5);

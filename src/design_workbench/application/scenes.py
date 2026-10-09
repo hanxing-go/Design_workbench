@@ -49,6 +49,10 @@ class SceneService:
     def edit(self, request: EditRequest, preview: bool = False) -> dict[str, Any]:
         started = time.perf_counter()
         body = request.model_dump(mode="json", exclude_none=True, by_alias=True)
+        # Preserve the v0.1.0 request digest when the new optional behavior is off.
+        for operation in body["operations"]:
+            if operation.get("complete_beds") is False:
+                operation.pop("complete_beds")
         digest = fingerprint("edit", body)
         if not preview:
             result = self.repository.replay(request.request_id, digest)

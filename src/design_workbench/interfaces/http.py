@@ -212,8 +212,11 @@ def create_app(settings: Settings) -> FastAPI:
     def render(identifier: str, known: dict[str, str] | None = None) -> dict[str, Any]:
         if workbench.pack is None:
             raise WorkbenchError("RESOURCES_NOT_READY", "素材尚未配置。")
-        scene = workbench.service(project_path(identifier)).repository.load()
-        return render_packet(scene, workbench.catalog, workbench.pack, known)
+        repository = workbench.service(project_path(identifier)).repository
+        scene = repository.load()
+        return render_packet(
+            scene, workbench.catalog, workbench.pack, known, repository.attachment()
+        )
 
     @app.get("/api/projects/{identifier}/consistency")
     def consistency(identifier: str) -> dict[str, object]:

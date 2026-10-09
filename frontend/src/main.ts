@@ -2,6 +2,7 @@ import './style.css';
 import shell from './shell.html?raw';
 import type { Material, Model, Packet, Point, Selection, State, Summary } from './types';
 import { Viewer } from './viewer';
+import { disposeChunk } from './signText';
 
 const root = document.querySelector<HTMLDivElement>('#app')!;
 root.innerHTML = shell;
@@ -103,7 +104,10 @@ async function refresh(full = false) {
   const packet = await api<Packet>(endpoint('/render'), full ? {} : viewer.versions);
   if (full) {
     viewer.chunks.clear();
-    for (const group of viewer.meshes.values()) viewer.scene.remove(group);
+    for (const group of viewer.meshes.values()) {
+      viewer.scene.remove(group);
+      disposeChunk(group);
+    }
     viewer.meshes.clear();
     viewer.versions = {};
   }
@@ -427,6 +431,7 @@ viewer.onHit = (hit, event) =>
       await commit([
         {
           op: 'set',
+          complete_beds: currentState.name.endsWith('_bed'),
           blocks: [{ position: target, state: currentState, group: input('result-group') }],
         },
       ]);

@@ -67,6 +67,7 @@ uv run python scripts/install_smoke.py
 | --- | --- |
 | [项目目标](docs/GOALS.md) | 总目标、优先级与交付点 A/B/C |
 | [实施路线](docs/ROADMAP.md) | P0–P8 分阶段任务及完成条件 |
+| [扩展计划](docs/PLANNED_EXTENSIONS.md) | 尚未实现的行走精修和网格体素化 |
 | [当前能力](docs/CURRENT_CAPABILITIES.md) | 已实现内容和后续缺口 |
 | [快速开始](docs/QUICKSTART.md) | 本机启动、全新安装、GUI 流程及验证 |
 | [架构](docs/ARCHITECTURE.md) | Python 领域/应用/适配器/接口与前端边界 |
@@ -86,5 +87,7 @@ uv run python scripts/install_smoke.py
 蓝图兼容范围是版本一致的 Litematica v6、不重叠区域。实体/NBT 关联格受到编辑保护；存在歧义的区域或导出会明确失败。已验证独立读取器，尚未执行 Minecraft/Litematica 客户端内验收。
 
 Windows 已验证真实浏览器工作流；Linux 已在 WSL Ubuntu 中验证核心检查及干净环境安装。[首次 GitHub Actions](https://github.com/hanxing-go/Design_workbench/actions/runs/37935155062) 的 Windows/Linux 核心与安装、Linux 官方资源与真实浏览器任务全部通过。
+
+第一人称行走精修，以及把 OBJ/glTF 转成方块，已写入 [扩展计划](docs/PLANNED_EXTENSIONS.md)，当前版本还没有这两项。
 
 源码采用 MIT 许可；Minecraft 素材和第三方建筑不受本项目 MIT 许可覆盖。用户项目、游戏资源、日志、导出及本地验收产物留在 `.local/` 和 `artifacts/`，不提交到源码仓库。

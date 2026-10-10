@@ -2,7 +2,7 @@
 
 独立的 Minecraft 建筑设计工作台。Python 保存权威场景并执行编辑、历史、资源和蓝图读写；TypeScript/Three.js 提供实际方块的三维界面。
 
-**P1–P6 已完成，交付点 A/B 达成。** 当前支持 Minecraft Java **1.20.1 / DataVersion 3465**。CLI、HTTP、MCP 共用工具服务，外部 AI 已实际完成查询、建造、看图、改稿与导出；平台内自主模型调度属于尚未实现的 P7。
+**P1–P6 已完成，交付点 A/B 达成；P7 进行中。** 当前支持 Minecraft Java **1.20.1 / DataVersion 3465**。CLI、HTTP、MCP 共用工具服务，外部 AI 已实际完成木屋、苦情巨树和迪迦等作品的创作及导出。工作台现提供任务阶段、预算、取消恢复、用户确认改稿和独立候选稿；平台内自主模型调度仍待实现。
 
 公开仓库：<https://github.com/hanxing-go/Design_workbench>。`v0.1.0` 保存 P1–P5 的交付版本，开发与版本管理约定见 [贡献指南](CONTRIBUTING.md)。
 
@@ -28,6 +28,7 @@ cd D:\Study\program\Design_workbench
 - 预演修改差异再应用；原子提交、自动保存、撤销/重做、重开和修订冲突检查。
 - 检查常见门床部件和连接状态，预览建议后应用；导出蓝图供外部工具使用。
 - 外部 AI 通过 CLI 或 MCP 查询材料、批量编辑、查看固定修订的多视角/剖切 PNG 并改稿；网页同步刷新外部编辑，修订冲突与重试有统一处理。
+- 顶部“AI 任务”创建持久任务，查看进度和预算，确认或拒绝改稿、取消和继续；候选稿保留完整工程及截图，打开副本继承需求与反馈。外部模型用量须按实际计数回报，详见 [AI 任务控制](docs/AI_CONTROLS.md)。
 
 已在真实 Chrome 中完成木屋完整设计流程、36,094 格教堂导入与局部编辑、全部高级表单操作。导出用独立的 litemapy 逐格核对完整状态与坐标，教堂的 67 个方块实体保留。
 
@@ -96,6 +97,7 @@ uv run python scripts/install_smoke.py
 | [P5 验收记录](docs/P5_ACCEPTANCE.md) | 27 项任务到实现和真实验证的映射 |
 | [P6 使用指南](docs/P6_USAGE.md) | CLI 优先、MCP/HTTP 接入、截图任务与预算 |
 | [P6 验收记录](docs/P6_ACCEPTANCE.md) | 实际外部 AI 看图改稿、协议/浏览器与安装验证 |
+| [AI 任务控制](docs/AI_CONTROLS.md) | 预算、取消恢复、改稿确认、候选稿和外部 Agent 接入 |
 | [范围与验收](docs/SCOPE.md) | 全项目边界和后续验收要求 |
 
 ## 当前边界

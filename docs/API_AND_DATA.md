@@ -63,12 +63,20 @@ selector 可包含 bounds、name、group、region，多个条件取交集。屋�
 | POST | /api/projects/{id}/export | expected_revision、allow_lossy；返回二进制蓝图和 X-Export-Report |
 | POST | /api/projects/{id}/render | 已知 chunk_versions；返回增量分块、模型和警告 |
 | GET | /api/projects/{id}/consistency | 规则问题与待预演建议 |
-| GET | /api/tools/v1 | 15 个工具及完整 JSON Schema |
+| GET | /api/tools/v1 | 15 个基础工具 + 11 个设计控制工具及完整 JSON Schema |
 | POST | /api/tools/v1/{name} | 与 CLI/MCP 共用的工具请求 |
 | POST | /api/projects/{id}/views | 固定修订的实际多角度 PNG；wait=false 异步返回任务 |
 | GET | /api/render-jobs/{task_id} | 截图状态、进度与结果 |
 | POST | /api/render-jobs/{task_id}/cancel | 停止截图任务与自有进程树 |
 | GET | /api/render-jobs/{task_id}/images/{index}.png | 下载生成的 PNG |
+| GET / POST | /api/projects/{id}/design-runs | 列出 / 创建持久设计任务 |
+| GET | /api/design-runs/{run_id} | 阶段、预算、用量、预演、候选稿与事件 |
+| POST | /api/design-runs/{run_id}/{cancel或resume或finish} | 取消、保留用量继续、记录结果 |
+| POST | /api/design-runs/{run_id}/decision | 用户确认或拒绝 proposal_id；确认时检查修订 |
+| POST | /api/design-runs/{run_id}/candidates | 保存 expected_revision 对应的完整候选稿 |
+| POST | /api/design-runs/{run_id}/candidates/{candidate_id}/open | 新项目副本和继承需求/反馈的新任务 |
+| GET | /api/design-runs/{run_id}/candidates/{candidate_id}/download | 下载不可变 SQLite 工程 |
+| GET | /api/design-runs/{run_id}/renders/{task_id} | 查看受控截图；已完成 PNG 持久保留 |
 
 工作台默认监听 127.0.0.1，无远程鉴权或多人实时同步设计。CLI 可以使用任意项目文件路径；GUI 管理配置 data_dir 下的 projects 目录。
 
@@ -93,5 +101,7 @@ selector 可包含 bounds、name、group、region，多个条件取交集。屋�
 默认限制：250,000 个存储格；一次编辑触达 500,000 格、256 项操作；蓝图区域总体积 2,000,000 格；输入压缩文件 32 MB、解压 64 MB。它们是资源预算，不是交互流畅度承诺。
 
 默认新建工作区 X/Z=-512..511，Y=-64..511。GUI/HTTP 可在创建请求指定范围。data_dir、cache_dir、log_dir 分开配置，日志轮转 2 MB×4；没有后台模型任务或凭据配置。
+
+设计控制使用单独 schema 1 数据库，保持项目 SQLite schema 2。预算、累计计数、暂停/恢复、用户确认与快照规则见 [AI_CONTROLS](AI_CONTROLS.md)。工具结果可包含持久化的 error 字段；客户端须检查错误，不把 HTTP 成功传输当作设计操作成功。
 
 P6 默认普通工具硬超时 30 秒，输入 4 MB、JSON 响应 2 MB；截图 100,000 个存储格、6 视角、8M 像素、16 MB PNG、60 秒、2 个工作进程和 16 个任务。新增创建/导出回执保证同一 request_id 重试；导出保存原字节。MCP 的 PNG 使用 ImageContent，CLI 将 PNG 与 manifest 保存到 output-dir，HTTP 提供下载 URL。截图任务生命周期和配置见 [P6_USAGE](P6_USAGE.md)。

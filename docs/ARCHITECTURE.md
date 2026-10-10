@@ -80,7 +80,7 @@ Design_workbench/
 
 SQLite 保存项目元数据、分块内容、修订、编辑差异与历史。一个编辑事务同时提交状态和日志；失败整体回滚，成功返回新修订。支持 `expected_revision` 防止旧稿覆盖和 `request_id` 避免客户端重试重复修改。
 
-重做与撤销为新的可审查状态变更，修订号不回退；事务竞争、异常退出和迁移失败已测试。长期候选稿与模型任务记录待 P7；当前持久化的是编辑历史。
+重做与撤销为新的可审查状态变更，修订号不回退；事务竞争、异常退出和迁移失败已测试。外部 AI 任务另存于 design-runs.sqlite3；候选稿通过固定读事务内的 SQLite 在线 backup 保存完整工程，独立于撤销历史。模型任务的供应商连接与平台内调度仍待实现，见 [AI_CONTROLS](AI_CONTROLS.md)。
 
 用户项目、资源缓存、配置、日志与导出产物放在可配置的数据目录，不放入 Python 安装包。支持便携路径；禁止写死旧仓库、用户名和 Codex 安装路径。
 
@@ -104,7 +104,7 @@ P6 的 `render.views` 与 HTTP 截图 API 返回实际 PNG、修订、相机、�
 
 ## AI 工具契约
 
-已提供 `catalog.search/material`、`project.list/create`、`scene.summary/inspect/preview_edit/commit_edit`、`history.undo/redo`、`render.views/status/cancel`、`asset.import/export`，共 15 个工具。
+已提供 `catalog.search/material`、`project.list/create`、`scene.summary/inspect/preview_edit/commit_edit`、`history.undo/redo`、`render.views/status/cancel`、`asset.import/export`，共 15 个基础工具。另有 11 个外部设计控制工具，任务协调在 interfaces/designs.py，契约在 application/design_contracts.py，持久化与候选快照在 adapters/storage/design_runs.py。确认入口只供用户网页使用，不加入工具目录。
 
 工具只返回必要的摘要、差异、资源引用和图片，不每次输出全部方块。修改有预算、显式选区、修订校验和原子性；错误包含具体路径与原因。AI 在合法工具内自由组合建筑，不需要执行任意 Python 源码才能使用平台。
 

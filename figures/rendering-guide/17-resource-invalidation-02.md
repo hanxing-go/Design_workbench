@@ -1,0 +1,13 @@
+# 17｜资源失效：材料换版，旧说明书也要换 · 图2
+
+对应[说明文档](../../docs/rendering-guide/17-resource-invalidation.md)。箭头表示步骤或依赖，具体读法见正文。
+
+```mermaid
+flowchart TD
+    requestOld["先请求贴图甲"] --> requestNew["随后切换到乙"]
+    requestNew --> current["当前标识记为乙"]
+    current --> arrive["一张贴图到达"]
+    arrive --> check{"匹配当前标识？"}
+    check -->|"是"| install["更新各共享材质<br/>释放被替换纹理"]
+    check -->|"否"| discard["释放迟到纹理<br/>继续使用当前资源"]
+```

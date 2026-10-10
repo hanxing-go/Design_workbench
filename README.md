@@ -83,6 +83,7 @@ uv run python scripts/install_smoke.py
 | [架构](docs/ARCHITECTURE.md) | Python 领域/应用/适配器/接口与前端边界 |
 | [性能计划](docs/PERFORMANCE_PLAN.md) | 渲染瓶颈、优化顺序及客户端方案 |
 | [渲染优化实验记录](docs/RENDERING_OPTIMIZATION_LOG.md) | 每次优化、失败/回退、真实大建筑基准与100,000格验收 |
+| [渲染优化新手图解](docs/rendering-guide/README.md) | 一点一篇，生活类比、前后流程与详细图示；另有可放大图片的离线网页 |
 | [显示修复](docs/RENDERING_FIXES.md) | 特殊方块、透明材质及 MC 版本边界 |
 | [多版本计划](docs/VERSION_SUPPORT.md) | 当前支持范围和新增版本的配套要求 |
 | [工程规范](docs/ENGINEERING.md) | 类型、锁文件、事务恢复、检查与发布 |

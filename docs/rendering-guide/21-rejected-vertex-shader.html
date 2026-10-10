@@ -1,0 +1,30 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>21｜回退的顶点着色器：花更多内存，画面却没明显改善 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html" aria-current="page">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>21｜回退的顶点着色器：花更多内存，画面却没明显改善</h1>
+<p><strong>人话一句：尝试让显卡保留原来的局部坐标计算方式，但真实画面收益很小、内存成本很大，所以回退。</strong></p>
+<p><strong>状态：已回退。</strong> 实验中的额外 <code>localPosition</code>、<code>blockOffset</code> 属性和对应顶点着色器没有作为这次不透明合批方案保留。</p>
+<h2>优化为什么也要记录失败</h2>
+<p>减少绘制调用后，一些植物、楼梯边缘与原实现有细小像素差异。一个合理猜想是：合并几何时先在CPU上把局部坐标搬到世界位置，和原来的实例变换计算顺序不同；有限精度的小数计算也许影响了边缘。</p>
+<p>合理猜想值得试，但“听起来合理”不能替代测量。像修照片时为每个像素保存额外两份定位笔记，如果照片没有明显变好，却占用大量空间，就要考虑撤回这份笔记，而不是因为已经写了代码就继续留下。</p>
+<h2>局部坐标与世界坐标是什么</h2>
+<p><strong>局部坐标</strong>描述一个方块自己的形状，例如顶点在方块左上角。<strong>世界坐标</strong>描述它在整座建筑里的位置。<strong>顶点着色器</strong>是一段由显卡执行的绘图程序，负责把顶点位置经过变换，送往屏幕。</p>
+<p>普通合批会把每份几何顶点加上方块位置，写入大几何的世界坐标数组。实验额外保留 <code>localPosition</code>，即未搬动的局部位置，以及 <code>blockOffset</code>，即方块的放置偏移；显卡使用这些额外信息，尝试恢复与实例化接近的变换计算方式。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/21-rejected-vertex-shader-01.png" alt="图1：21｜回退的顶点着色器：花更多内存，画面却没明显改善" loading="lazy" style="width:913px;max-width:100%;margin:0 auto"><figcaption>图1：21｜回退的顶点着色器：花更多内存，画面却没明显改善 · 点击图片放大查看</figcaption></figure>
+<p>从“正常合批”开始的是常规坐标路线，从“实验方案”开始的是额外保存局部位置与偏移的路线，各自的箭头表示数据进入变换的过程。两条路线汇入“同相机比较画面”，说明最后用相同观察条件比较输出，而不是凭着色器代码看起来更接近就认定改善。</p>
+<p>这样做并没有减少建筑方块数，也没有换成简单模型。它只是给每个顶点增加数据，让位置的计算方式不同。三维向量可以理解为三个数，分别记录X、Y、Z。每个32位数占4字节，两组就是 <code>2 × 3 × 4 = 24</code> 字节；字节是计算存储空间的单位。合并建筑有大量顶点，单点24字节积累起来就很可观。</p>
+<h2>实验如何作决定</h2>
+<figure class="diagram"><img src="../../figures/rendering-guide/21-rejected-vertex-shader-02.png" alt="图2：21｜回退的顶点着色器：花更多内存，画面却没明显改善" loading="lazy" style="width:492px;max-width:100%;margin:0 auto"><figcaption>图2：21｜回退的顶点着色器：花更多内存，画面却没明显改善 · 点击图片放大查看</figcaption></figure>
+<p>从边缘差异出发，猜想经过原型后分成画面比较与内存记录两条检查线，箭头表示实验步骤。两条证据汇入“决定回退”，再通向保存记录，表示收益与成本共同决定是否采用，而不是只看单一帧率数字。</p>
+<p>历史round6诊断包 <code>index-Dw4vvm_m.js</code> 的这条不透明尝试，在18张真实建筑对比画面上几乎没有收益，但10万格混合城镇CPU几何属性从160.65MB升到232.32MB，增加71.67MB，约44.6%。教堂从51.00MB升到78.78MB，城堡裁片从64.53MB升到98.17MB，别墅从17.85MB升到27.57MB。</p>
+<p>这些是CPU侧几何属性的字节口径，不能叫整块GPU显存实测。数字属于该次历史试验，不是当前CeI4包的占用；最终10万格的对应几何属性约160.57MB，已经不包含这次不透明方案的额外属性。</p>
+<p>本机RTX5060Ti、Chrome154、DPR1的该轮短测旋转P95仍约16.8ms，也没有明显帧率改善。即使稳定帧没有变坏，更多内存仍增加传输和管理负担；当画面收益很小，就没有充分理由留下这项成本。测试因此选择回退，保留原始JSON、静态包和失败原因供后来复查。</p>
+<h2>回退以后知道了什么</h2>
+<p>回退说明这一具体方案的收益不足，不等于证明“小数精度永远不影响画面”。后来的树叶实例化同时改变局部变换和对象绘制顺序，差异减少更明显，但也没有把两种原因完全拆开。透明路径自身所需的局部精度处理，要按它自己的证据判断，不能把本次不透明失败推广成所有着色器都应删除。</p>
+<p>这是一种可复查的选择：先提出猜想，做受控画面比较，同时记成本，证据不支持就撤回。留下失败记录，能让下次遇到同一问题的人知道什么已经试过、付出了多少、为什么没采用。</p>
+<h2>读完自检</h2>
+<ol>
+<li>写了优化代码，就应该永久保留吗？<strong>要看实际收益和成本，证据不足可以回退。</strong></li>
+<li>增加44.6%的是整个程序内存吗？<strong>不是，是本轮CPU几何属性字节。</strong></li>
+<li>这个试验失败证明差异只能由绘制顺序导致吗？<strong>没有，具体因果仍未完全确认。</strong></li>
+</ol>
+<p>当前实现可查：<a href="../../frontend/src/chunkGeometry.ts">世界坐标合并</a>、<a href="../../frontend/src/viewer.ts">当前Viewer</a>，其中没有保留这次不透明尝试。历史数据与决定可查：<a href="../RENDERING_OPTIMIZATION_LOG.md">优化实验记录</a>实验06。返回<a href="index.html">总目录</a>。</p>
+<p>图示源文件：<a href="../../figures/rendering-guide/21-rejected-vertex-shader-01.md">图1</a> · <a href="../../figures/rendering-guide/21-rejected-vertex-shader-02.md">图2</a>。</p>
+<div class="pager"><a href="20-transparent-reuse.html">← 上一篇</a><a href="index.html">返回总目录 →</a></div><p class="source-link"><a href="21-rejected-vertex-shader.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

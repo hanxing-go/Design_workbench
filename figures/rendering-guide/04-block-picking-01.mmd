@@ -1,0 +1,6 @@
+flowchart LR
+  OldClick["原来：点击"] --> OldObject["命中对象或实例"]
+  OldObject --> OldCell["找到原方块"]
+  NewClick["现在：点击"] --> NewTriangle["命中合并网格表面"]
+  NewTriangle --> Ownership["查询三角形归属"]
+  Ownership --> NewCell["找到原方块"]

@@ -1,0 +1,11 @@
+flowchart TD
+    change["相关分块完成重建"] --> texts{"旧或新块有字牌？"}
+    texts -->|"有"| dirty["标记需要刷新"]
+    texts -->|"无"| parts{"数量与几何相同？"}
+    parts -->|"否"| dirty
+    parts -->|"是"| fields{"六字段全相同？"}
+    fields -->|"否"| dirty
+    fields -->|"是"| keep["沿用透明网格"]
+    dirty --> flush["重做汇总与文字"]
+    keep --> sort["相机移动仍排序"]
+    flush --> sort

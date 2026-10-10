@@ -1,0 +1,5 @@
+flowchart LR
+  OldCells["原来：普通方块"] --> OldKinds["按状态和面分组"]
+  OldKinds --> OldDraw["多个绘制请求"]
+  NewCells["现在：普通方块"] --> NewMaterial["分块内按材质合并"]
+  NewMaterial --> NewDraw["较少绘制请求"]

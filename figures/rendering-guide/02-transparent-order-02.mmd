@@ -1,0 +1,8 @@
+flowchart TD
+  Data["固定的两块玻璃顶点"] --> ViewA["从正面看"]
+  Data --> ViewB["从背面看"]
+  ViewA --> ListA["红远蓝近"]
+  ViewB --> ListB["蓝远红近"]
+  ListA --> DrawA["先红后蓝"]
+  ListB --> DrawB["先蓝后红"]
+  Offscreen["视野外的部件"] --> Skip["本次索引不绘制"]

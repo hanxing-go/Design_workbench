@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>10：先保存输入值，再同步控件 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html" aria-current="page">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>10：先保存输入值，再同步控件</h1>
+<p>切层事件先保存用户刚输入的值，再停止播放和同步控件，可以避免新值被旧状态覆盖。（状态：已采用的正确性修复，本身不是帧率优化。）</p>
+<h2>先用柜台登记理解</h2>
+<p>顾客把地址改成新地址，柜员却先按档案里的旧地址重填表格，再读取表格，最后读到的当然还是旧地址。合理顺序是先记下顾客的新地址，再整理档案显示，最后用新地址提交。</p>
+<p>顾客填写的表格对应输入控件，旧档案对应当前切层状态，重填对应同步函数。比喻只说明读取与回写的先后；项目还会暂停播放、校验输入并限制可选高度。</p>
+<h2>新值是怎样丢失的</h2>
+<p>滑块输入事件发生时，控件里已经是用户的新高度。停止播放函数 <code>stop()</code> 不仅清掉播放计时器，还会调用同步函数 <code>sync()</code>，将滑块与数字框重新填成当前渲染目标层。</p>
+<p>原来的顺序是先停止，再读取滑块。如果当前高度 39、用户拉到 20，停止时同步又把滑块写回 39；随后读取到 39，切层函数认为目标没变，直接返回。页面很快完成，却没有执行用户要求的切层。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/10-layer-input-fix-01.png" alt="图1：10：先保存输入值，再同步控件" loading="lazy" style="width:992px;max-width:100%;margin:0 auto"><figcaption>图1：10：先保存输入值，再同步控件 · 点击图片放大查看</figcaption></figure>
+<p>两条路径都有停止和同步，差别只是读取发生在什么时候。下方先保存新值，即使控件暂时被回写，也不会丢失本次输入的目标。</p>
+<h2>当前怎样处理两种输入</h2>
+<p>滑块处理器先把控件值转换为数字保存在局部变量，再调用停止，最后用保存的数字切层。数字框也先读取数值，再停止；只有数值有限时才跳转，否则重新同步显示。空输入得到无效数值，不能拿它当作正常高度。</p>
+<p>数字框显示“第几层”，滑块保存世界高度，两者不是同一数字。若建筑最低高度是 -4，输入第 3 层对应 <code>-4 + 3 - 1 = -2</code>。跳转函数将目标取整，并限制在有方块的最低与最高高度之间。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/10-layer-input-fix-02.png" alt="图2：10：先保存输入值，再同步控件" loading="lazy" style="width:260px;max-width:100%;margin:0 auto"><figcaption>图2：10：先保存输入值，再同步控件 · 点击图片放大查看</figcaption></figure>
+<p>主线从用户序号走到世界高度，说明数字框需要经过坐标换算。同步发生后，判断和换算使用的仍是保存值，最后再把显示更新到新目标。</p>
+<p>全部显示模式使用无限高度作为状态，控件显示建筑最高层；两者在数字上可能看起来接近，语义却不同。没有建筑数据或界面处于暂停交互状态时，跳转仍会被拒绝，不能仅从事件已触发推断操作成功。</p>
+<h2>为什么它影响性能结论</h2>
+<p>这是输入正确性问题，修复的目的是真正执行切层。旧代码产生的空操作当然很快，但它不能代表渲染性能。记录中第二轮切层与急切时间已明确作废；修正后观察到真实重建约 647 毫秒的阻塞，才进一步推动时间切片等优化。</p>
+<p>合理验证应检查实际层数、屋顶是否消失、切面是否露出以及恢复结果，再记录耗时。标签变化、没有报错或等待很短，都不足以证明工作完成。正确性检查让性能数字有意义，而不是额外追求一个更漂亮的时间。</p>
+<p>这项修复只增加一次局部数值保存，适合所有“控制动作会同步回写输入”的事件处理。它没有独立帧率提升结论；快速切层的最终结果来自真实执行后的多项优化。</p>
+<p>实现见 <a href="../../frontend/src/layerPlayer.ts">layerPlayer.ts</a> 的输入处理器、<code>stop</code>、<code>seek</code> 与 <code>sync</code>；作废结果和重新测量见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化记录</a>。</p>
+<h2>读懂自检</h2>
+<p><strong>问：一次切层只用了很短时间，是否就能证明渲染优化成功？</strong></p>
+<p>答：不能。先确认实际目标层和几何确实改变，排除空操作，再讨论耗时与帧率。</p>
+<p><a href="index.html">返回总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/10-layer-input-fix-01.md">图1</a> · <a href="../../figures/rendering-guide/10-layer-input-fix-02.md">图2</a>。</p>
+<div class="pager"><a href="09-mesh-version-reuse.html">← 上一篇</a><a href="11-backend-read-cache.html">下一篇 →</a></div><p class="source-link"><a href="10-layer-input-fix.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>09：变化条件相同时复用已有几何 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html" aria-current="page">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>09：变化条件相同时复用已有几何</h1>
+<p>重建前先比较方块版本、邻居版本和有效切层，相同就保留已有几何，可以跳过队列中的无效重复工作。（状态：已采用。）</p>
+<h2>先用菜单校对理解</h2>
+<p>餐厅准备重印菜单前，先核对菜品版本、价格版本和排版版本；这些条件都没变，就继续使用原菜单。不能只看菜名没变，因为价格已经调整也必须重印。</p>
+<p>菜单对应分块几何，版本清单对应构建签名，重印对应销毁并重新创建网格。签名是描述当前几何依赖条件的一串值，不是把整份内容做成密码学散列；程序相信更新流程会正确推进版本。</p>
+<h2>为什么要包含邻居</h2>
+<p>每个分块收到数据变化时，版本计数增加。当前签名包含本分块和六个面相邻分块的版本，再加有效切层。邻居能遮住本块表面，因此本块方块没改，邻居变化仍可能要求重建。</p>
+<p>此前分块只要进入队列，就可能移除旧对象并重新构造。现在 <code>rebuild</code> 开始先算签名，与这个分块已构建时保存的签名比较；相同直接返回，不同才替换几何。清空场景或更换资源时，签名与版本一起重置。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/09-mesh-version-reuse-01.png" alt="图1：09：变化条件相同时复用已有几何" loading="lazy" style="width:768px;max-width:100%;margin:0 auto"><figcaption>图1：09：变化条件相同时复用已有几何 · 点击图片放大查看</figcaption></figure>
+<p>下方把条件比较放在移除旧几何之前，避免先拆掉再发现其实没变化。它省掉的是创建、复制与释放工作，队列检查本身仍会执行。</p>
+<h2>“有效切层”如何计算</h2>
+<p>对于底部高度为 16 的分块，它占用高度 16 到 31。所有不高于 15 的切层都让它完全隐藏，可归为有效层 15；16 到 31 的层各有不同结果；不低于 32 的层归为有效层 32。</p>
+<p>为什么上限是 32 而非 31？高度 32 的邻居可能遮住本块高度 31 的顶面。切到 31 时该邻居隐藏，顶面需要露出；切到 32 时可能再次被遮住。所以有效层必须多保留上方一层的区别。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/09-mesh-version-reuse-02.png" alt="图2：09：变化条件相同时复用已有几何" loading="lazy" style="width:976px;max-width:100%;margin:0 auto"><figcaption>图2：09：变化条件相同时复用已有几何 · 点击图片放大查看</figcaption></figure>
+<p>三条分支把无限多的高度压缩为与该分块表面有关的条件。底部与邻居版本不变时，高度 40 和 50 都归到 32，可复用；但邻居版本一变，即使高度相同也不能直接跳过。</p>
+<h2>适用、代价与验证边界</h2>
+<p>它适合连续输入最终回到原状态，或者操作安排了某些实际无变化分块的场景。签名只记录当前已构建结果，没有缓存每个历史高度的完整网格。如果已经按新层重建，再回到旧层，仍可能要重建；不能理解成任意高度切换都有历史缓存。</p>
+<p>保存版本与签名需要少量额外数据；依赖维护不完整会错误复用旧表面。因此验证要覆盖邻居增删、上下边界变化、资源替换，以及快速输入回到初始层，检查实际几何而非只看等待时间。</p>
+<p>历史迭代曾观察到五次急切从约 740–813 毫秒降至 42–49 毫秒，促成保留这类复用机制；这些是当时组合版本的测试，并非控制其他因素后的独立因果测量。最终数字另有对应包与条件，不能把历史快照冒充当前版本，也不能单凭签名相同证明严格像素一致。</p>
+<p>实现见 <a href="../../frontend/src/viewer.ts">viewer.ts</a> 的 <code>chunkGenerations</code>、<code>builtKeys</code> 与 <code>rebuild</code>；历史与最终测量见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化记录</a>。</p>
+<h2>读懂自检</h2>
+<p><strong>问：本分块的方块完全没改，签名为什么还可能变化？</strong></p>
+<p>答：邻居版本或有效切层变化也会影响哪些表面可见；签名必须包含这些依赖，才能安全复用。</p>
+<p><a href="index.html">返回总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/09-mesh-version-reuse-01.md">图1</a> · <a href="../../figures/rendering-guide/09-mesh-version-reuse-02.md">图2</a>。</p>
+<div class="pager"><a href="08-latest-input.html">← 上一篇</a><a href="10-layer-input-fix.html">下一篇 →</a></div><p class="source-link"><a href="09-mesh-version-reuse.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

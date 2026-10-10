@@ -1,0 +1,8 @@
+flowchart LR
+    oldRead["以前：取结果"] --> oldKeep["一直留下旧项"]
+    oldKeep --> oldGrow["缓存越积越多"]
+    newRead["现在：取结果"] --> newKeep["复用或生成"]
+    newKeep --> budget{"超过缓存预算？"}
+    budget -->|"否"| retain["继续保留"]
+    budget -->|"是"| evict["移出旧项"]
+    evict --> budget

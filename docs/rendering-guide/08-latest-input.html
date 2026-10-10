@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>08：连续切层时使用最新目标 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html" aria-current="page">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>08：连续切层时使用最新目标</h1>
+<p>用户快速输入多个切层高度时，让尚未执行的分块工作读取最新高度，可以避免逐个重放已经过时的目标。（状态：已采用，和时间切片及构建复用协同工作。）</p>
+<h2>先用点单修改理解</h2>
+<p>你向服务员说“半糖”，接着改成“无糖”，最后又改成“正常糖”。如果饮料尚未制作，合理做法是按最后一次要求制作，而不是依次做好三杯再倒掉前两杯。</p>
+<p>订单要求对应目标层，待做饮料对应待重建分块，制作开始对应同步重建函数执行。比喻的边界也很关键：已经做好的一杯不能假装没做过；代码不能在一个同步函数执行到一半时随意撤回全部指令。</p>
+<h2>队列里保存什么</h2>
+<p>每次切层先写入当前目标高度，再把受影响的分块编号加入去重集合。去重集合，即 <code>Set</code>，保证同一个编号在等待队列中只出现一次。队列不保存“按旧高度 19 重建”这种独立任务，只保存“这个分块需要检查”。</p>
+<p>构建循环实际取出分块时，读取的是此刻的目标层。循环开头先等待一次动画帧机会，因而同一轮工作开始前的多次输入可以汇合。已经有循环运行时，不会再同时启动第二个循环。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/08-latest-input-01.png" alt="图1：08：连续切层时使用最新目标" loading="lazy" style="width:1072px;max-width:100%;margin:0 auto"><figcaption>图1：08：连续切层时使用最新目标 · 点击图片放大查看</figcaption></figure>
+<p>上方的重复来源于每次输入都承担完整工作。下方把目标值与待处理编号分开保存，旧目标不会作为必须播放完的历史记录留在队列里。</p>
+<h2>一个小例子</h2>
+<p>假设当前高度是 39，重建开始前依次输入 <code>19 → 0 → 39 → 20 → 39</code>。每次都会更新目标并收集相关分块，最后目标是 39。轮到某个分块时，它按 39 构建，而不是先按 19、再按 0、再重复恢复。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/08-latest-input-02.png" alt="图2：08：连续切层时使用最新目标" loading="lazy" style="width:497px;max-width:100%;margin:0 auto"><figcaption>图2：08：连续切层时使用最新目标 · 点击图片放大查看</figcaption></figure>
+<p>“汇合各次受影响分块”这一支负责收集工作范围，“最终目标三十九”这一支负责保存最新目标，两者在执行时会合。范围可能仍包含中间输入涉及的很多分块；能否直接复用，还取决于下一篇的构建签名判断。</p>
+<h2>“取消旧任务”的真实含义</h2>
+<p>这里的取消指不再按旧目标创建等待中的结果，并不是终止一个运行中的工作线程。若新输入到达前某块已经建好了，它的成本已经发生；新目标还可以把该编号再次排队，确保最终状态正确。</p>
+<p>同样，快速输入不保证队列立刻变空。多次高度变化会形成受影响分块的并集，仍要检查这些编号，只是不用重放每个中间高度。整个场景或资源更换时会清空旧等待编号，并等待新的纹理；这不是一个额外的并行取消系统。</p>
+<h2>适用、代价与验证边界</h2>
+<p>这种机制适合滑块拖动、连续步进等最终目标更重要的交互。它牺牲了“每个过渡层都完成显示”的要求；若做必须逐层展示的教学播放，播放节奏与等待完成需要另外设计。输入值已更新，也不表示最终几何已完成。</p>
+<p>应发送确定的多次输入，检查最后实际层、最终几何覆盖和恢复结果，等待构建与绘制后再截图；不能仅凭输入控件显示最后数字判定成功。最终十万格的五次急切完成约四十多毫秒，是最新目标、时间切片、签名复用等组合效果，没有本项独立帧率结论。输入分散到更长时间、工作已开始的情况也可能更慢。</p>
+<p>实现见 <a href="../../frontend/src/viewer.ts">viewer.ts</a> 的 <code>setLayer</code>、<code>scheduleBuild</code> 与 <code>runBuilds</code>；急切测试条件见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化记录</a>。</p>
+<h2>读懂自检</h2>
+<p><strong>问：最后高度回到 39，是否意味着此前所有工作都能撤销且完全零成本？</strong></p>
+<p>答：不能。尚未执行的工作使用最新目标，已执行的成本保留；队列仍需检查，只有符合复用条件的几何才能跳过重建。</p>
+<p><a href="index.html">返回总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/08-latest-input-01.md">图1</a> · <a href="../../figures/rendering-guide/08-latest-input-02.md">图2</a>。</p>
+<div class="pager"><a href="07-frame-budget.html">← 上一篇</a><a href="09-mesh-version-reuse.html">下一篇 →</a></div><p class="source-link"><a href="08-latest-input.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

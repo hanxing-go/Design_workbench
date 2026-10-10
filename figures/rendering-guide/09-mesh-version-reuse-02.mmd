@@ -1,0 +1,12 @@
+flowchart TD
+  Height["底部十六的分块"] --> Low["目标层不高于十五"]
+  Height --> Inside["目标层十六至三十一"]
+  Height --> High["目标层不低于三十二"]
+  Low --> LowKey["有效层十五"]
+  Inside --> ExactKey["保留实际目标层"]
+  High --> HighKey["有效层三十二"]
+  HighKey --> Compare["连同七个版本比较"]
+  LowKey --> Compare
+  ExactKey --> Compare
+  Neighbor["邻居版本改变"] --> Compare
+  Compare --> Rebuild["版本不同仍需重建"]

@@ -1,0 +1,6 @@
+flowchart LR
+  OldInput["原来：改变切层"] --> OldAll["广泛重建场景"]
+  OldAll --> OldResult["等待全部工作"]
+  NewInput["现在：改变切层"] --> Range["计算旧新高度范围"]
+  Range --> Select["只安排相交分块"]
+  Select --> Reuse["其余几何继续复用"]

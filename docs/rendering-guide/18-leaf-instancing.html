@@ -1,0 +1,29 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>18｜树叶实例化：特殊材料保留合适的摆放方式 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html" aria-current="page">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>18｜树叶实例化：特殊材料保留合适的摆放方式</h1>
+<p><strong>人话一句：树叶恢复较小批次的实例化绘制，让画面更接近原实现，付出更多绘制调用的代价。</strong></p>
+<p><strong>状态：已采用。</strong> 普通不透明模型继续合并；走裁切层的树叶，按模型状态和可见面组合恢复 <code>InstancedMesh</code>。</p>
+<h2>为什么树叶值得单独处理</h2>
+<p>把许多货物一起运输能减少发车次数，但有些精细货物对摆放顺序更敏感。之前的合批优化把许多不透明方块的顶点放进大几何，建筑绘制调用大幅减少。视觉比较却发现，树叶附近的一些边缘与原实现有差异，所以尝试给树叶恢复一种更适合它的组织方式。</p>
+<p>树叶使用<strong>裁切贴图</strong>：空洞位置的像素被丢弃，剩下叶片正常绘制。相邻树叶可能保留贴得很近、甚至共面的双面几何，绘制顺序和坐标计算方式都可能影响细小边缘。具体差异究竟由浮点舍入还是共面绘制顺序造成，现有证据没有完全拆开证明。</p>
+<h2>合并与实例化怎样不同</h2>
+<p><strong>合并几何</strong>像把每份货物的形状搬到大托盘对应位置，形成一份大图。<strong>实例化</strong>像保留一个形状模板，再列一张位置表：同样的树叶放在甲位置、乙位置、丙位置。每个实例有自己的变换，模板几何被同一批实例复用。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/18-leaf-instancing-01.png" alt="图1：18｜树叶实例化：特殊材料保留合适的摆放方式" loading="lazy" style="width:952px;max-width:100%;margin:0 auto"><figcaption>图1：18｜树叶实例化：特殊材料保留合适的摆放方式 · 点击图片放大查看</figcaption></figure>
+<p>从“树叶也全部合批”走到大网格，是叶片曾经与普通不透明块共用的组织方式。另一条从树叶单独分组走到模板和位置表，再进入实例批次；箭头表示构建步骤，最后一格同时标出画面差异减少与绘制调用增加。</p>
+<p>当前实现按分块里的模型状态和可见面组合分组，给树叶生成小批次实例网格，逐格登记平移位置。其他普通不透明块仍走合并路线，玻璃等半透明块仍走全局排序路线。这是混合策略：让不同材料使用各自适合的组织方式。</p>
+<h2>一个相邻树叶的例子</h2>
+<p>两格树叶在相邻位置，外轮廓看似是两个简单方块，贴图却有许多叶片和空洞。恢复实例化时，几何保留局部坐标，每个实例再由位置矩阵摆到建筑里；同组实例同时保留对应的源方块身份，所以点选仍能知道点击的是哪一格。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/18-leaf-instancing-02.png" alt="图2：18｜树叶实例化：特殊材料保留合适的摆放方式" loading="lazy" style="width:372px;max-width:100%;margin:0 auto"><figcaption>图2：18｜树叶实例化：特殊材料保留合适的摆放方式 · 点击图片放大查看</figcaption></figure>
+<p>从“同状态同可见面”往下看，一个树叶形状配一张位置表，分出甲、乙两次摆放，随后汇入同一实例批次绘制。分支箭头表示同一模板被用于不同位置，最后的点选格说明源方块身份仍保留，并非把两格树叶变成无法区分的一个方块。</p>
+<h2>画面变好了多少，代价是什么</h2>
+<p>历史D18叶片候选在固定相机、固定颜色、同一后端的六视图比较中，相对原版图像的超容差差异像素总数：别墅从5602降到1002，减少82.1%；城堡从7150降到4322，减少39.6%。这里说的是“与对照图不同的像素减少”，不是建筑准确率，也不是所有像素都改善82.1%。</p>
+<p>严格的每通道容差3像素门槛仍未通过。真实建筑差异主要落在一像素边缘附近，透明探针内部仍有差异。恢复树叶实例化同时恢复了局部变换与部分对象绘制顺序，只能确认树叶合批是相关因素，不能宣布已证明某一个数值误差原因。</p>
+<p>代价也直接测到：10万格混合城镇调用从177增加到243，城堡裁片从190增加到1090，别墅从48增加到306。调用少通常有利，但画面与速度要一起考虑。本机RTX5060Ti、Chrome154上，D18两场DPR2诊断的旋转P95仍16.8ms；后续73n完整验收和最终CeI4回归保留了这一策略，也满足对应场景的约60Hz稳定帧目标。</p>
+<p>这些数字属于记录的静态包和本机，不代表所有显卡都能60帧。当前机制还给叶片几何安排了明确所有权，避免释放时互相影响，详见第19篇。</p>
+<h2>读完自检</h2>
+<ol>
+<li>优化一定要让每项绘制调用继续减少吗？<strong>不一定，质量改善可以有合理调用成本。</strong></li>
+<li>差异减少82.1%表示严格像素比较通过了吗？<strong>没有，严格门槛仍未通过。</strong></li>
+<li>整座建筑都恢复成逐格绘制了吗？<strong>没有，只对树叶采用小批次实例化，其他路线保留。</strong></li>
+</ol>
+<p>实现可查：<a href="../../frontend/src/viewer.ts">树叶实例分支</a>。数据可查：<a href="../RENDERING_OPTIMIZATION_LOG.md">优化实验记录</a>实验07及像素边界。继续阅读：<a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期</a>，或返回<a href="index.html">总目录</a>。</p>
+<p>图示源文件：<a href="../../figures/rendering-guide/18-leaf-instancing-01.md">图1</a> · <a href="../../figures/rendering-guide/18-leaf-instancing-02.md">图2</a>。</p>
+<div class="pager"><a href="17-resource-invalidation.html">← 上一篇</a><a href="19-gpu-buffer-lifetime.html">下一篇 →</a></div><p class="source-link"><a href="18-leaf-instancing.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

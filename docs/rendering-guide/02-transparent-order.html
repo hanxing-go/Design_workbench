@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>02：让半透明表面按远近排队 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html" aria-current="page">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>02：让半透明表面按远近排队</h1>
+<p>把半透明表面集中管理，并随相机位置调整绘制顺序，可以减少绘制请求，同时保留必要的透视叠加关系。（状态：已采用，属于排序近似而非逐像素精确方案。）</p>
+<h2>先用彩色薄膜理解</h2>
+<p>想象在白纸上依次盖红色和蓝色透明薄膜。后盖的薄膜会与下面已有颜色混合，交换顺序，颜色就可能改变。玻璃表面的透明度混合也依赖先后顺序：通常要先画远处，再画近处。</p>
+<p>这里，薄膜对应透明表面，摆放顺序对应绘制顺序，观察位置对应相机。比喻到这里就结束了：真实模型有前后两面、交叉形状和被墙遮住的部分，不能只按两张平纸处理。</p>
+<h2>为什么需要全局排序</h2>
+<p>普通实体可以先画，再靠深度判断保留最近表面。深度是某个表面相对于相机的远近记录。透明表面还要混合后方颜色，因此当前材质关闭深度写入，但仍接受已有实体深度的遮挡判断。</p>
+<p>如果每个分块各自排好透明方块，分块之间的前后关系仍可能错。当前将不同分块的半透明部件放进统一网格，每个部件保存一段顶点范围。索引缓冲是一份“按哪个顶点编号画”的清单；排序时改清单，不搬动已经保存的顶点、纹理和颜色数组。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/02-transparent-order-01.png" alt="图1：02：让半透明表面按远近排队" loading="lazy" style="width:952px;max-width:100%;margin:0 auto"><figcaption>图1：02：让半透明表面按远近排队 · 点击图片放大查看</figcaption></figure>
+<p>上方展示原先依靠许多独立对象绘制的方式。下方把表面数据集中保存，但通过索引保留了调整先后顺序的能力。</p>
+<p>相机投影与视图矩阵没变化时，排序函数直接返回；它们描述相机如何把世界映射到画面。变化时，程序先用包围球粗略判断部件是否进入视野，再按部件中心的深度从远到近排列。同深度时保留稳定次序；每段内部还先排背面，再排正面，以接近此前双面透明材质的两次绘制顺序。</p>
+<h2>一个小例子</h2>
+<p>红玻璃在相机前方较远处，蓝玻璃在近处，索引先列红色，再列蓝色。相机绕到建筑另一面，远近关系反过来，清单也反过来；玻璃的顶点位置并没有移动。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/02-transparent-order-02.png" alt="图2：02：让半透明表面按远近排队" loading="lazy" style="width:584px;max-width:100%;margin:0 auto"><figcaption>图2：02：让半透明表面按远近排队 · 点击图片放大查看</figcaption></figure>
+<p>两条分支表示同一份几何数据在两种观察方向下使用不同清单。右下角的跳过只影响本次绘制，部件数据仍在场景里，转回来还能显示。</p>
+<h2>适用、代价与验证边界</h2>
+<p>这种方案适合透明方块较多、原先每块都产生绘制开销的场景。文字等部件使用不同材质时，索引还会划分材质组，因此“统一网格”不等于所有内容永远只有一次绘制调用。</p>
+<p>相机移动会增加处理器上的可见性判断、排序和索引更新成本。它按部件中心排序，不逐像素决定先后；长形表面互相穿插时，中心顺序可能无法表达所有区域的真实关系。不能把它称为完全消除透明错误的算法。</p>
+<p>检查时应固定相机比较玻璃颜色、遮挡和内部可见性，再改变观察方向。性能计时要包含排序：当前 <code>drawNow</code> 先排序，再调用绘制函数，只计后者会漏掉处理器工作。已有透明样例仍出现超出严格像素容差的差异；实际几何、点选和截图核验通过，也不能替代逐像素证明。最终帧率属于组合实现。</p>
+<p>实现见 <a href="../../frontend/src/transparency.ts">transparency.ts</a> 的 <code>sort</code> 和 <a href="../../frontend/src/viewer.ts">viewer.ts</a> 的 <code>drawNow</code>；条件与限制见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化记录</a>。</p>
+<h2>读懂自检</h2>
+<p><strong>问：旋转相机后，为什么只换顶点编号清单就能调整玻璃顺序？</strong></p>
+<p>答：玻璃的位置没有变，需要改变的是先画哪段表面；索引清单正好规定这个顺序。</p>
+<p><a href="index.html">返回总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/02-transparent-order-01.md">图1</a> · <a href="../../figures/rendering-guide/02-transparent-order-02.md">图2</a>。</p>
+<div class="pager"><a href="01-opaque-batching.html">← 上一篇</a><a href="03-sign-order.html">下一篇 →</a></div><p class="source-link"><a href="02-transparent-order.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

@@ -1,0 +1,28 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>06：切层时只重建相关高度的分块 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html" aria-current="page">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>06：切层时只重建相关高度的分块</h1>
+<p>切层只改变一段高度的可见性，因此只安排与这段高度相交的分块重建，可以减少无关工作。（状态：已采用。）</p>
+<h2>先用百叶窗理解</h2>
+<p>一排百叶窗已经遮到某个高度，往下拉三格，主要改变的是这三格附近的开合状态，没有必要把远处所有窗片拆下来重装。切层高度相当于窗帘边缘，分块相当于一组窗片，几何重建相当于重新整理这组的可见表面。</p>
+<p>比喻只适用于找出受影响区域。建筑的表面还会互相遮挡，所以边界以下的方块也可能需要露出顶面，不能机械地只处理“刚被隐藏”的方块。</p>
+<h2>实际选择范围</h2>
+<p>分块是边长为 16 格的数据与几何组织单元。程序先立即保存新的目标层，再计算旧、新高度之间的低值与高值；遍历分块编号，检查该块的高度区间是否与这个范围相交。同一层重复输入直接返回。</p>
+<p>此前切层要广泛处理场景并反复建立位置表；现在复用完整位置索引，只把相关分块加入重建队列。每次实际重建会跳过高于新层的方块，邻居高于新层时也视为不可见，从而补出切面的内部表面。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/06-local-layer-cut-01.png" alt="图1：06：切层时只重建相关高度的分块" loading="lazy" style="width:992px;max-width:100%;margin:0 auto"><figcaption>图1：06：切层时只重建相关高度的分块 · 点击图片放大查看</figcaption></figure>
+<p>下方并非忽略被切开的建筑内部，而是先缩小可能变化的分块范围。进入队列的分块仍按当前层重新判断可见面。</p>
+<h2>两个小例子</h2>
+<p>高度从 23 切到 20，变化范围是 20 到 23，仅与高度 16 到 31 的分块带相交。高度 0 到 15 的分块不受影响，可复用已有几何。</p>
+<p>但从 16 切到 15 时，相交判断包含两端：高度 0 到 15 与 16 到 31 的分块带都会进入队列。上带需要隐藏高度 16，下带需要考虑高度 15 的顶面是否露出。程序使用“分块底部不高于范围上限，分块顶部不低于范围下限”的规则。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/06-local-layer-cut-02.png" alt="图2：06：切层时只重建相关高度的分块" loading="lazy" style="width:553px;max-width:100%;margin:0 auto"><figcaption>图2：06：切层时只重建相关高度的分块 · 点击图片放大查看</figcaption></figure>
+<p>两条主分支说明边界切层为什么同时涉及上下两带。图中的“隐藏”改变的是显示状态，不是删除建筑数据；恢复高度时仍能重新显示。</p>
+<h2>适用与代价</h2>
+<p>这种方案适合频繁小幅调层、建筑跨越很多高度分块的情况。当前仍要遍历全部分块的编号，因此不是完全没有全局扫描，只是扫描分块元信息，而非重新处理所有方块。相关分块内仍可能有大量表面要重新创建。</p>
+<p>从全部显示的无限高度切到有限层，范围可能覆盖许多上方分块，工作量会更大。透明部件或字牌真正变化时，还可能刷新全局透明批次；“局部选分块”不等于整个渲染流程的每一步都严格局部。后续构建签名也可能进一步跳过实际无变化的分块。</p>
+<h2>怎样验证</h2>
+<p>应核验真实目标层、切后内部暴露面、跨高度边界和恢复全景，再检查方块身份与点选。只看滑块标签不足以证明切层真的发生；此前输入读取顺序错误就让一轮“很快”的切层实际上没有执行。</p>
+<p>最终十万格场景的新剖切完成仍约两百毫秒、恢复约四到五百毫秒，说明响应流畅与全部几何完成是两件事。这些时间属于整体实现及记录的本机条件，不能作为本项独立收益，也不表示通过隐藏数据或降低模型细节取得结果。</p>
+<p>实现见 <a href="../../frontend/src/viewer.ts">viewer.ts</a> 的 <code>setLayer</code>、<code>rebuild</code>；实际完成时间与正确性检查见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化记录</a>。</p>
+<h2>读懂自检</h2>
+<p><strong>问：从高度 16 切到 15，为什么高度 0 到 15 的分块也要检查？</strong></p>
+<p>答：它的顶部可能原来被高度 16 的方块遮住，现在应显示；只隐藏上方会漏掉新露出的切面。</p>
+<p><a href="index.html">返回总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/06-local-layer-cut-01.md">图1</a> · <a href="../../figures/rendering-guide/06-local-layer-cut-02.md">图2</a>。</p>
+<div class="pager"><a href="05-incremental-occupancy.html">← 上一篇</a><a href="07-frame-budget.html">下一篇 →</a></div><p class="source-link"><a href="06-local-layer-cut.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

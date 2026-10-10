@@ -1,0 +1,7 @@
+flowchart LR
+  OldGlass["原来：玻璃总批次"] --> OldDraw["整批玻璃先后固定"]
+  OldText["独立文字平面"] --> OldDraw
+  OldDraw --> Wrong["文字难以插入中间"]
+  NewGlass["现在：玻璃分段"] --> Queue["共用深度队列"]
+  NewText["文字也作为分段"] --> Queue
+  Queue --> Right["依远近交错绘制"]

@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>13 · 保存局部修改时，直接寻找附近坐标 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html" aria-current="page">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>13 · 保存局部修改时，直接寻找附近坐标</h1>
+<p><strong>已采用。</strong> 只改少量分块时，保存程序直接查询这些分块内的坐标，避免为了找出附近方块而遍历整个建筑。修改范围很大时，仍使用全场景扫描，选择更合适的收集方式。</p>
+<p>这项优化发生在保存阶段。它与显示缓存不同：缓存可以丢弃重算，数据库里的项目内容必须完整、正确地写入。</p>
+<h2>像修一层楼，不用逐户问全城</h2>
+<p>假设维修队只要清点一栋楼的一层住户。以前做法是翻全城名单，逐人判断是否住在这一层；现在直接查询这一层的门牌。若要清点全城，重新按楼层挨个查空门牌就不划算，翻完整名单反而合适。</p>
+<p>代码里的“名单”是一个 <strong>字典</strong>，也就是按坐标快速查找方块的表。“这一层”对应一个 16×16×16 的分块，“门牌”对应分块内的 4,096 个坐标。比喻的边界是：查询范围中有空格，程序也会查一下，但空格不存在方块就跳过，不会因此在项目里新增空气块。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/13-local-chunk-write-01.png" alt="图1：13 · 保存局部修改时，直接寻找附近坐标" loading="lazy" style="width:912px;max-width:100%;margin:0 auto"><figcaption>图1：13 · 保存局部修改时，直接寻找附近坐标 · 点击图片放大查看</figcaption></figure>
+<p>这张图怎样读：两条路线都会编码和写入目标分块，区别是怎样找到这些分块里的方块。旧路线先检查全建筑，新路线在小范围修改时直接查附近坐标，所以节省的发生在收集阶段。</p>
+<p>注意，原版也只编码、写入触及的分块。它浪费的主要是<strong>找这些方块时扫描了全建筑</strong>，不是每次都重写整个数据库。优化改变的是收集路径，保存范围保持一致。</p>
+<h2>程序怎样选择收集路径</h2>
+<p>若没有分块需要写，直接返回。否则估算“目标分块数 × 4,096”；这个数不大于场景的已存储格数时，采用坐标直查。超过时采用原来的扫描与筛选。这叫<strong>回退路径</strong>：遇到不适合局部策略的情况，沿用已经正确工作的通用做法。</p>
+<p>例如建筑有 100,000 个已存储格，只改一块：直接查询最多 4,096 个坐标，比逐格检查十万个方块更省。若要改 100 块，逐块直查会经过 409,600 个坐标，此时扫描十万个已存储格更合适。</p>
+<p>两条路径收集完成后，都会按坐标排序，生成相同的方块状态表和格子条目，再压缩保存。负坐标也遵守分块边界：例如 X=-1 属于 X 从 -16 到 -1 的分块，不会误写到正坐标块。分组、来源区域以及显式保存的特殊空气状态也不会被丢掉。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/13-local-chunk-write-02.png" alt="图2：13 · 保存局部修改时，直接寻找附近坐标" loading="lazy" style="width:587px;max-width:100%;margin:0 auto"><figcaption>图2：13 · 保存局部修改时，直接寻找附近坐标 · 点击图片放大查看</figcaption></figure>
+<p>这张图怎样读：第一个菱形先判断有没有分块要写，没有就结束分块写入步骤；整个请求是否还需更新元数据，要由外层事务处理。第二个菱形比较两种收集方式的估算工作量，选出的路线最终汇入同一套编码、写入和提交保障。</p>
+<h2>快速收集不等于可以跳过保存保障</h2>
+<p>提交使用数据库<strong>事务</strong>，将分块、项目元数据和历史记录作为一组改动完成。它仍检查<strong>期望修订</strong>，即这次编辑依据的项目版本：如果别人已经修改项目，就报告冲突，而不是把旧计划强行覆盖。没有绕过事务，也没有降低 SQLite 的持久写入保障。</p>
+<p>105,102 格、188 分块场景的独立实验，只测内存数据库中的分块收集、编码和写入。修改 1 块的中位数从 <strong>34.99 ms 降至 0.23 ms</strong>，5 块从 40.17 ms 降至 5.79 ms；新旧压缩行逐字节相同。</p>
+<p>全量 188 块的观测中位数却是 <strong>184.79→209.69 ms</strong>。两者走同类扫描路径，测量也有波动；这个不利结果仍保留，不能声称本优化让全量写入更快。上述时间还不包括从磁盘载入场景、编辑规划和耐久提交，更不代表网页点击到完成的时间。</p>
+<p>实现见 <a href="../../src/design_workbench/adapters/storage/sqlite.py">分块写入与事务</a>；实验条件与原始结果见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化实验记录</a>。</p>
+<h2>读懂自检</h2>
+<p>以前保存一格会重写全部分块吗？<strong>答案：不会，原版只写目标分块，但收集时扫描了全建筑。</strong></p>
+<p>坐标直查为什么不永远更快？<strong>答案：范围很大或很空时，它会查询大量空坐标，因此需要扫描回退路径。</strong></p>
+<p><a href="index.html">总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/13-local-chunk-write-01.md">图1</a> · <a href="../../figures/rendering-guide/13-local-chunk-write-02.md">图2</a>。</p>
+<div class="pager"><a href="12-chunk-decode-cache.html">← 上一篇</a><a href="14-edit-net-delta.html">下一篇 →</a></div><p class="source-link"><a href="13-local-chunk-write.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

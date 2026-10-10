@@ -1,0 +1,29 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>20｜透明批次复用：没有动到窗户，就别重做整套窗户 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html" aria-current="page">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>20｜透明批次复用：没有动到窗户，就别重做整套窗户</h1>
+<p><strong>人话一句：局部修改后，先确认透明内容是否真的变化；没变化且没有字牌资源需要替换，就沿用现成的透明网格。</strong></p>
+<p><strong>状态：已采用。</strong> 最终CeI4包根据透明几何引用及方块全部六字段比较结果，决定是否重建全局透明批次。</p>
+<h2>从房子维修理解重复工作</h2>
+<p>你只替换了远离窗户的一块木地板，维修队却每次都把整栋楼的玻璃拆下再装上，显然有重复工作。之前的73n实现重建任意相关分块后，都会标记全局透明集合需要刷新，即使透明部分完全相同，也会重新整理它。</p>
+<p>这里的<strong>透明批次</strong>是把玻璃等内容组织到一起的网格。<strong>flushTransparency</strong>表示把各分块透明部件重新汇总、复制，并准备排序所需结构。复用既有批次只省掉这一步构建；相机移动时的透明深度排序仍要正常执行，玻璃之间的遮挡关系不会因为复用而停止更新。</p>
+<h2>现在先检查，再决定</h2>
+<figure class="diagram"><img src="../../figures/rendering-guide/20-transparent-reuse-01.png" alt="图1：20｜透明批次复用：没有动到窗户，就别重做整套窗户" loading="lazy" style="width:952px;max-width:100%;margin:0 auto"><figcaption>图1：20｜透明批次复用：没有动到窗户，就别重做整套窗户 · 点击图片放大查看</figcaption></figure>
+<p>从“以前：局部修改”开始的是原流程，相关分块一重建，就直接走到“总是重做透明批次”。从“现在：局部修改”开始的是当前流程，箭头表示处理先后，比较通过才进入复用分支，否则仍汇总重做全局透明内容。</p>
+<p>“没改玻璃名字”不足以判断相同。透明部件数量必须相等，按顺序对应的几何必须是同一个引用对象，也就是仍指向内存里的同一份几何，而不只是两份看起来一样的数据。每格的六个值也要相等：X、Y、Z坐标、状态或渲染模型标识、分组名称、保护标记。几何引用能反映模型或可见面组合改变；六字段也保住点选、分组和保护信息。</p>
+<p><strong>dirty标记</strong>就是“需要刷新”的便条。多个分块陆续重建时，只要任意一个触发便条，后续其他分块相同也不能把它擦掉。所有待处理分块完成后，有便条才汇总透明批次。</p>
+<h2>木地板、邻居墙和字牌三种情况</h2>
+<p>远离玻璃的木地板替换后，透明部件可能完全相同，可以复用。若新增一面紧邻玻璃的墙，邻居遮挡会改变玻璃的可见面，即使玻璃状态没变，也需要新几何并刷新。删除透明分块也需要刷新，避免旧玻璃继续留在全局网格。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/20-transparent-reuse-02.png" alt="图2：20｜透明批次复用：没有动到窗户，就别重做整套窗户" loading="lazy" style="width:456px;max-width:100%;margin:0 auto"><figcaption>图2：20｜透明批次复用：没有动到窗户，就别重做整套窗户 · 点击图片放大查看</figcaption></figure>
+<p>从顶部依次检查字牌、部件数量与几何、六字段，任一条件不允许复用，就汇入“标记需要刷新”并重做汇总。全部通过才走“沿用透明网格”，而复用与重做两条线最后都进入相机排序，箭头表示判断步骤，不表示排序被省略。</p>
+<p>字牌是保守处理的特殊情况。文字纹理属于重建的分块，旧资源会释放，文字也可能变化。因此旧块或新块只要有文字网格，就一律要求刷新；当前没有尝试靠“文字看起来相同”跳过这一步。这避免复用到旧文字资源。</p>
+<h2>实测省掉什么，没证明什么</h2>
+<p>本机RTX5060Ti、Chrome154、10万格、DPR2的同条件连续GUI对照中，73n修改、撤销或比较会产生约14.8–28.9ms透明汇总。CeI4候选的5轮100格与3轮1000格修改/撤销，共16次操作全部没有执行透明flush；五次查看修改前也省掉了这一步，五次返回当前仍需要刷新。</p>
+<p>这证明去掉了确定的重复CPU工作。整次编辑还包含请求、数据库保存、其他分块几何、界面等待和绘制，不能把一次flush少15–29ms直接改写成“所有编辑都快了同样时间”。</p>
+<p>两包连续相机帧P95均16.8ms。CeI4最大帧仍50.1ms，P99与总绘制CPU P95没有稳定进一步改善。因此该方案采用的理由是避免冗余，不是已经证明消除了所有卡顿。精准回归也检查透明内容真正改变时能正确失效，最终全量状态、几何覆盖与点选通过。</p>
+<h2>读完自检</h2>
+<ol>
+<li>复用透明网格后，相机旋转还需要排序吗？<strong>需要，省掉的是重建，排序继续。</strong></li>
+<li>玻璃未改名，旁边新墙能影响复用吗？<strong>能，可见面改变时必须刷新。</strong></li>
+<li>字牌名字和位置没变就一定可以复用吗？<strong>当前不这样判断，新旧有字牌均要求刷新。</strong></li>
+</ol>
+<p>实现可查：<a href="../../frontend/src/viewer.ts">透明内容比较</a>、<a href="../../frontend/src/types.ts">方块六字段</a>。证据可查：<a href="../RENDERING_OPTIMIZATION_LOG.md">优化实验记录</a>实验09。返回<a href="index.html">总目录</a>。</p>
+<p>图示源文件：<a href="../../figures/rendering-guide/20-transparent-reuse-01.md">图1</a> · <a href="../../figures/rendering-guide/20-transparent-reuse-02.md">图2</a>。</p>
+<div class="pager"><a href="19-gpu-buffer-lifetime.html">← 上一篇</a><a href="21-rejected-vertex-shader.html">下一篇 →</a></div><p class="source-link"><a href="20-transparent-reuse.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

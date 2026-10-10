@@ -1,0 +1,55 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>16｜有界缓存：架子要有容量，也要会腾位置 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html" aria-current="page">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>16｜有界缓存：架子要有容量，也要会腾位置</h1>
+<p><strong>人话一句：已经做过的结果可以留着复用，但缓存要限制规模，满了就移出旧项。</strong></p>
+<p><strong>状态：已采用。</strong> 前端几何和缩略图缓存有项数限制；后端渲染投影缓存同时限制项目数、方块数和一部分字节估算。</p>
+<h2>从“把工具留着”理解缓存</h2>
+<p>做模型时，每次都重新制作同一把尺子很浪费，所以可以把尺子放在工具架上。不过，如果所有用过的工具永远留下，架子会越来越满。缓存解决重复计算，有界缓存再补上一条规则：架子达到预算时要腾位置。</p>
+<p><strong>缓存项</strong>是一份可以复用的结果，例如某个模型与可见面组合的几何，或者某种状态的PNG小图。<strong>淘汰</strong>是把结果从缓存移出，不是删除用户蓝图。下次再次需要它，可以从源数据重新生成，代价是这次请求没有命中缓存。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/16-bounded-caches-01.png" alt="图1：16｜有界缓存：架子要有容量，也要会腾位置" loading="lazy" style="width:870px;max-width:100%;margin:0 auto"><figcaption>图1：16｜有界缓存：架子要有容量，也要会腾位置 · 点击图片放大查看</figcaption></figure>
+<p>从“以前：取结果”一路走到“缓存越积越多”，说明旧项没有容量检查时会持续留下。从“现在：取结果”开始的是当前流程，超预算就移出旧项，再沿回箭头重新检查，直到进入“继续保留”分支；箭头表示检查和腾位置的先后。</p>
+<h2>三种架子，规则并不相同</h2>
+<table>
+<thead>
+<tr>
+<th>缓存</th>
+<th>当前预算</th>
+<th>满了如何选旧项</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>前端几何模板</td>
+<td>4096项</td>
+<td>FIFO：最早插入的先移出</td>
+</tr>
+<tr>
+<td>前端PNG缩略图</td>
+<td>256项</td>
+<td>FIFO：最早插入的先移出</td>
+</tr>
+<tr>
+<td>后端项目渲染投影</td>
+<td>4项目、合计50万格、128,000,000字节估算</td>
+<td>LRU：最久没访问的项目先移出</td>
+</tr>
+</tbody>
+</table>
+<p><strong>FIFO</strong>像排队，谁先入队谁先离开。几何或图片被再次读取时，当前实现不会调整它的插入顺序。<strong>LRU</strong>像常用文件夹，刚访问过的移到最近使用的一端，最久没碰的先腾走。不能把这些缓存统称“都是LRU”。</p>
+<p>后端的三个预算是一起检查的，任意一个超出就继续淘汰项目，直到满足限制。它们是所有缓存项目的合计预算，不是每个项目都可以各占50万格。项目投影保存的是为了显示而整理的结果，SQLite项目文件仍是正式数据来源。</p>
+<h2>一个LRU小例子</h2>
+<p>假设架子已经放了甲、乙、丙、丁四个项目，你又打开甲，甲就变成最近使用。随后打开戊，项目数变为五，最久未访问的乙先被移出。再次打开乙要重新整理投影，但乙的建筑不会丢失。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/16-bounded-caches-02.png" alt="图2：16｜有界缓存：架子要有容量，也要会腾位置" loading="lazy" style="width:220px;max-width:100%;margin:0 auto"><figcaption>图2：16｜有界缓存：架子要有容量，也要会腾位置 · 点击图片放大查看</figcaption></figure>
+<p>从“四项目”往下逐步看，先访问甲改变最近使用次序，再加入戊，超过项目数预算后移出乙。最后一格强调只移出了缓存投影，箭头是这个LRU例子的事件顺序，不表示乙的原文件也被移动或删除。</p>
+<h2>“128MB”究竟限制了什么</h2>
+<p>这个数统计了压缩分块、保留源内容和渲染数据的一部分字节估算。渲染数据使用序列化后的大小估算，Python容器、对象等额外开销并未全部按真实占用计算；浏览器中的建筑、GPU缓冲和正在返回的HTTP数据也不属于这个后端缓存账本。</p>
+<p>还有一个时间边界：大请求可能先完成载入和计算，再在请求结束时检查预算。超过预算的项目可以不留在缓存里，但计算过程仍可能占用较多内存。因此这是一套缓存留存预算，不是“整个程序内存永远不超过128MB”的保证。</p>
+<p>历史D18候选压力测试载入了完整115.6万格城堡，超过50万格合计预算，项目投影被淘汰，无法享受随后的小场景热缓存收益；两次保存刷新约14.9–15.6秒。这是本机压力边界，不能由小场景函数热缓存约0.2ms推断百万格也同样快。</p>
+<p>移出几何时会调用释放方法，但如果别处仍引用几何对象，其CPU属性数组仍可以存在；释放与对象所有权将在第19篇说明。有界缓存减少长期积累，也带来重新生成成本。</p>
+<h2>读完自检</h2>
+<ol>
+<li>看过某张小图，会让它变成“最后淘汰”吗？<strong>当前FIFO不会因读取而调整顺序。</strong></li>
+<li>后端淘汰项目会删除建筑吗？<strong>不会，只移出渲染投影，原文件仍在。</strong></li>
+<li>128MB是程序总内存硬上限吗？<strong>不是，它只是部分后端缓存数据的估算预算。</strong></li>
+</ol>
+<p>实现可查：<a href="../../frontend/src/viewer.ts">前端缓存</a>、<a href="../../src/design_workbench/adapters/rendering/cache.py">后端RenderCache</a>。证据可查：<a href="../RENDERING_OPTIMIZATION_LOG.md">优化实验记录</a>的后端与百万压力部分。返回<a href="index.html">总目录</a>。</p>
+<p>图示源文件：<a href="../../figures/rendering-guide/16-bounded-caches-01.md">图1</a> · <a href="../../figures/rendering-guide/16-bounded-caches-02.md">图2</a>。</p>
+<div class="pager"><a href="15-independent-thumbnails.html">← 上一篇</a><a href="17-resource-invalidation.html">下一篇 →</a></div><p class="source-link"><a href="16-bounded-caches.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

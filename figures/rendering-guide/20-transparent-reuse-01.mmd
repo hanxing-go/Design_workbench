@@ -1,0 +1,7 @@
+flowchart LR
+    oldEdit["以前：局部修改"] --> oldChunk["重建相关分块"]
+    oldChunk --> oldFlush["总是重做透明批次"]
+    newEdit["现在：局部修改"] --> newChunk["重建相关分块"]
+    newChunk --> compare{"可安全复用？"}
+    compare -->|"否"| rebuild["重做全局透明"]
+    compare -->|"是"| reuse["复用现成批次"]

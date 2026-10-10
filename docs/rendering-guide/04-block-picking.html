@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>04：合批后仍能点中原来的方块 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html" aria-current="page">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>04：合批后仍能点中原来的方块</h1>
+<p>把绘制数据合并后，记录每段三角形的方块归属，点击仍能返回原方块的位置、分组和保护状态。（状态：已采用的合批配套机制。）</p>
+<h2>先用装箱清单理解</h2>
+<p>多个商品装进同一个大箱子，箱子少了，但售后不能只回答“你买的是这个箱子”。装箱清单要记录第几件属于哪个订单。合并网格是大箱子，三角形是箱内商品，方块身份表是清单。</p>
+<p>这个比喻说明合并后仍需追溯身份。真实点击还必须先判断鼠标指向哪个表面，并不是拿一个箱子的外边界代替所有商品形状。</p>
+<h2>从鼠标到真实表面</h2>
+<p>射线检测可以理解为从相机穿过鼠标所在画面位置，向场景发出一条看不见的线，寻找它最先碰到的三角形。三角形是模型表面的基本单元；楼梯、薄玻璃和半砖都由各自实际表面组成。</p>
+<p>独立对象或实例网格原本可以通过对象、实例编号找方块。现在普通合并网格记录每个部件的三角形累计结束位置，再用命中三角形的编号反查归属；实例路径仍使用实例编号，透明批次另有分段检测。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/04-block-picking-01.png" alt="图1：04：合批后仍能点中原来的方块" loading="lazy" style="width:892px;max-width:100%;margin:0 auto"><figcaption>图1：04：合批后仍能点中原来的方块 · 点击图片放大查看</figcaption></figure>
+<p>两条路径最终都返回方块身份，下方多了一步从三角形查清单。合批改变对象组织方式，没有改变编辑所需的方块信息。</p>
+<h2>一个小例子</h2>
+<p>假设方块甲、乙各贡献 12 个三角形，累计结束位置是 <code>[12, 24]</code>，编号从 0 开始。命中编号 17，它位于 12 到 23，所以属于乙。程序用二分查找缩小区间，不必从清单第一项一直找到底；若网格使用重排后的索引，先还原三角形编号，再查归属。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/04-block-picking-02.png" alt="图2：04：合批后仍能点中原来的方块" loading="lazy" style="width:573px;max-width:100%;margin:0 auto"><figcaption>图2：04：合批后仍能点中原来的方块 · 点击图片放大查看</figcaption></figure>
+<p>上半部分展示具体编号如何恢复乙的身份。下半部分是透明部件的另一条检测路径：包围球只负责排除明显碰不到的部件，最终仍测真实表面。</p>
+<p>透明全局网格依次检查可点选部件，先判断射线是否穿过包围球、是否超过允许距离，再只检测该段三角形。文字分段不参与独立点选。整场几何重建期间，点击直接返回空结果，避免在半新半旧的画面里执行编辑。</p>
+<h2>适用、代价与验证边界</h2>
+<p>这种机制适合绘制合批后仍需要精确定位方块的编辑器。它不是把每个占用格都当成完整立方体，因此点击薄片旁边的空隙不会自动命中整格；也不是沿格子逐步行走的体素算法。代价是保存归属数组，并在点击时执行模型表面检测；透明部件很多时，粗筛本身也有成本。</p>
+<p>命中法线表示表面朝向，当前程序取其中最显著的一个坐标轴作为放置方向。因此楼梯斜面不一定返回精确斜向法线。贴图上的透明像素也不保证逐像素穿透点选。没有方块命中时，还会尝试地面平面，返回用于地面放置的坐标。</p>
+<p>验证应同时核对场景数据、实际几何归属和真实画布点击。仅证明数据库里有某方块，不能证明它被画出；仅看到正确外观，也不能证明点击返回正确保护状态。现有点选通过的结论只覆盖已测模型与视角，最终帧率来自组合实现。</p>
+<p>实现见 <a href="../../frontend/src/chunkGeometry.ts">chunkGeometry.ts</a> 的 <code>triangleOwner</code>、<a href="../../frontend/src/viewer.ts">viewer.ts</a> 的 <code>pick</code> 与 <a href="../../frontend/src/transparency.ts">transparency.ts</a>；验证见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化记录</a>。</p>
+<h2>读懂自检</h2>
+<p><strong>问：射线穿过玻璃部件的包围球，能立刻认定点中了玻璃吗？</strong></p>
+<p>答：不能。球只是粗略范围，还要检测真实三角形，才能避免把范围内的空隙当作表面。</p>
+<p><a href="index.html">返回总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/04-block-picking-01.md">图1</a> · <a href="../../figures/rendering-guide/04-block-picking-02.md">图2</a>。</p>
+<div class="pager"><a href="03-sign-order.html">← 上一篇</a><a href="05-incremental-occupancy.html">下一篇 →</a></div><p class="source-link"><a href="04-block-picking.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

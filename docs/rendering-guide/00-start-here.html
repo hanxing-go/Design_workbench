@@ -1,0 +1,37 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>00：屏幕里的建筑是怎样画出来的 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html" aria-current="page">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>00：屏幕里的建筑是怎样画出来的</h1>
+<p><strong>先记住一句话：建筑数据是一份“哪里放什么方块”的清单，渲染则是把这份清单变成屏幕上的一张图。</strong> 本篇介绍基础概念；它不是另一项新优化。</p>
+<h2>先用搭积木来理解</h2>
+<p>想象你设计了一座积木城堡。你有一份清单：坐标（3，5，8）放石头，坐标（4，5，8）放朝东的楼梯，坐标（5，5，8）放蓝色玻璃。</p>
+<p>清单可以保存、修改、撤销和导出，但“清单已经存在”不等于“画面已经画好”。程序还要找到这些积木的外形和贴纸，决定哪些表面能看见，处理玻璃的前后关系，再交给显卡绘制。</p>
+<p>清单在这里对应<strong>方块数据</strong>；积木外形对应<strong>模型</strong>；贴纸和颜色对应<strong>贴图、材质</strong>；准备交给显卡的一堆三角形对应<strong>网格</strong>。真实的渲染流程还包含光照等工作，所以这个类比只解释几个主要环节。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/00-start-here-01.png" alt="图1：00：屏幕里的建筑是怎样画出来的" loading="lazy" style="width:412px;max-width:100%;margin:0 auto"><figcaption>图1：00：屏幕里的建筑是怎样画出来的 · 点击图片放大查看</figcaption></figure>
+<p>从上往下读图：只有走完后面的步骤，你才真正看见建筑。保存方块清单与绘制画面是不同工作，这也是为什么后端缓存和前端合批会分别出现。</p>
+<h2>方块为什么变成了三角形</h2>
+<p>显卡通常用三角形表示表面。一个普通立方体有六个面，每个四边形可以拆成两个三角形。楼梯、植物、玻璃板的外形不同，需要的表面也不同；被邻居完全挡住的面还可以省去。</p>
+<p><strong>网格</strong>就是准备好的一组顶点与三角形。顶点可以理解为表面的角点。<strong>材质</strong>告诉程序怎样画这些表面，例如使用哪张贴图、是否透明、是否发光。把很多表面合进一个网格，并不等于把数据库里的多个方块合成一个方块。</p>
+<p>图中用一个简化的小场景说明这个区别，数量只作示意：</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/00-start-here-02.png" alt="图2：00：屏幕里的建筑是怎样画出来的" loading="lazy" style="width:768px;max-width:100%;margin:0 auto"><figcaption>图2：00：屏幕里的建筑是怎样画出来的 · 点击图片放大查看</figcaption></figure>
+<p>图里A和B虽然可以一起提交绘制，编辑时仍能分别处理。后面的第04篇会说明：鼠标点到合并网格的一块三角形后，程序怎样找回它对应的方块。</p>
+<h2>十万个方块为什么可能卡顿</h2>
+<p>你可以把CPU想成安排工作的人，把GPU（显卡中的图形处理器）想成负责绘画的工人。CPU不仅要准备材料，还要不断发送绘制命令。工人画得快，如果安排者每帧发出几万条小命令，安排本身也可能拖慢进度。</p>
+<p>这些命令叫<strong>绘制调用</strong>，英文是draw call。一次调用可以画许多方块的表面，一个方块也可能参与多次调用，所以它和方块数量不是一对一关系。</p>
+<p>另一类卡顿来自浏览器的<strong>主线程</strong>。主线程可以理解为处理许多页面工作的主要执行路线：事件处理、部分页面更新和我们写的网格重建都会占用它。如果一次网格重建长时间不让出执行机会，鼠标和页面响应就可能延后。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/00-start-here-03.png" alt="图3：00：屏幕里的建筑是怎样画出来的" loading="lazy" style="width:724px;max-width:100%;margin:0 auto"><figcaption>图3：00：屏幕里的建筑是怎样画出来的 · 点击图片放大查看</figcaption></figure>
+<p>三个问题发生在不同地方，因此需要不同办法。第一类主要改善持续旋转；第二类主要改善切层和编辑时的响应；第三类主要减少刷新和局部修改中的重复处理。单独解决一个问题，其他问题仍可能存在。</p>
+<h2>流畅、立即完成，是两件事</h2>
+<p><strong>一帧</strong>是一张更新后的画面。60 FPS表示每秒约60张，换算下来每张约16.7毫秒。相邻画面的时间叫<strong>帧间隔</strong>；它包含浏览器的实际调度情况，不等于某一个函数的执行时间。</p>
+<p>如果一个修改总共需要500毫秒，但程序把准备工作拆开，中途仍能响应相机，你会感觉“等待结果，但页面没冻结”。如果500毫秒连续霸占主线程，你可能感觉“整个页面卡住了”。两者完成时间可能相近，使用体验却不同。分帧重建主要改善后者，不保证缩短总等待。</p>
+<p>实验中的P95表示约95%的样本不超过该值。例如P95为16.8毫秒，并不意味着最长一帧也是16.8毫秒；剩下的少量帧可以更慢。因此说明文档还会保留最长帧、首次载入和操作等待。</p>
+<h2>“分块”与“缓存”到底是什么</h2>
+<p><strong>分块</strong>是在空间里划出小区域。本项目每个分块覆盖16×16×16个整数坐标位置，最多4096个位置，但区域里可能有空气，不一定真的有4096个非空气方块。分块方便局部更新：修改一个角落时，先找对应小区域及必要邻居。</p>
+<p><strong>缓存</strong>是临时保留算好的结果，下一次符合条件时直接使用。它像提前整理好的笔记。笔记过期了就必须重算；笔记太多了就要淘汰一部分。缓存不是权威建筑数据，SQLite数据库仍负责保存真实项目。</p>
+<p>浏览器负责把数据变成画面，我们称它为<strong>前端</strong>。Python负责读写、编辑规则、历史和数据准备，我们称它为<strong>后端</strong>。第01–10篇主要讲前端，第11–14篇主要讲后端，两边的优化互相配合。</p>
+<h2>带着这些问题往下读</h2>
+<p>看到“合并”时，问：合并的是绘制工作，还是方块数据？看到“缓存”时，问：怎样发现旧结果过期？看到“局部更新”时，问：邻居会不会受影响？看到“更流畅”时，问：改善的是每帧，还是点击后等待时间？</p>
+<p>这些问题比记住函数名更重要。每篇图解都会给出答案和测试证据，全部历史实验可查 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化实验记录</a>。</p>
+<h2>读懂了吗</h2>
+<p>问题：同一类石头被合成一个大网格，是否意味着以后不能单独删除其中一块？</p>
+<p>答案：不是。合并的是用于绘制的表面数据，原始方块清单仍保留各自坐标与身份；程序还保留从三角形找回所属方块的信息。合批必须同时维护这两件事，才能既快又能正确编辑。</p>
+<p><a href="index.html">返回总目录</a> · <a href="01-opaque-batching.html">下一篇：不透明方块合批</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/00-start-here-01.md">图1</a> · <a href="../../figures/rendering-guide/00-start-here-02.md">图2</a> · <a href="../../figures/rendering-guide/00-start-here-03.md">图3</a>。</p>
+<div class="pager"><a href="index.html">← 总目录</a><a href="01-opaque-batching.html">下一篇 →</a></div><p class="source-link"><a href="00-start-here.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

@@ -1,0 +1,30 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>19｜缓冲生命周期：谁申请的设备，谁负责收好 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html" aria-current="page">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>19｜缓冲生命周期：谁申请的设备，谁负责收好</h1>
+<p><strong>人话一句：把对象从画面拿走，还要释放它拥有的显卡缓冲；共享模板与分块副本要分清责任。</strong></p>
+<p><strong>状态：已采用。</strong> 叶片分块使用克隆的几何并标记归属，删除实例和预演时显式释放相应资源。</p>
+<h2>用舞台道具理解资源</h2>
+<p>一出戏结束，把椅子从舞台搬走，只解决“观众看不见它”。如果椅子仍占着租用仓库，租金还会继续。三维场景也类似：<strong>场景对象</strong>决定什么会参与绘制；<strong>GPU缓冲</strong>存放显卡需要的顶点、实例位置等数据。移出场景和释放缓冲是两件事。</p>
+<p><code>dispose()</code> 是通知渲染系统释放相应GPU资源的方法。它不等于“马上把所有JavaScript对象和内存清零”。CPU中的属性数组只要还有引用，就仍可能存在；对象变得不可访问后，浏览器垃圾回收才有机会处理它。单看画面对象减少，不能推断显存已按同样比例减少。</p>
+<h2>清理流程补全了哪些步骤</h2>
+<figure class="diagram"><img src="../../figures/rendering-guide/19-gpu-buffer-lifetime-01.png" alt="图1：19｜缓冲生命周期：谁申请的设备，谁负责收好" loading="lazy" style="width:932px;max-width:100%;margin:0 auto"><figcaption>图1：19｜缓冲生命周期：谁申请的设备，谁负责收好 · 点击图片放大查看</figcaption></figure>
+<p>从“只移出画面”到“不再显示”只完成了场景移除，末格提醒还有资源清理责任。另一条从“移出实例网格”开始，箭头表示实际清理顺序：先释放实例缓冲，再按几何归属走“释放所属几何”或“保留共享资源”，不能把共享对象随分块一起销毁。</p>
+<p><strong>实例缓冲</strong>保存许多相同物体分别放在哪里。<code>InstancedMesh.dispose()</code> 处理实例对象自身的GPU资源；几何和材质是否释放，还需要根据所有权决定。当前分块清理会释放实例缓冲，并只对标记为分块所有的几何调用释放，避免一个分块随意关闭别人仍用的共享资源。</p>
+<h2>为什么树叶要克隆几何</h2>
+<p>几何缓存是一套可复用模板。树叶实例恢复后，若许多分块直接引用同一个模板，缓存淘汰与分块清理就会碰到同一对象。当前做法先 <code>geometry.clone()</code>，让每个树叶实例网格拥有自己的几何副本，并标上 <code>chunkGeometry</code>。这样某个分块结束时，可以明确释放它的副本。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/19-gpu-buffer-lifetime-02.png" alt="图2：19｜缓冲生命周期：谁申请的设备，谁负责收好" loading="lazy" style="width:685px;max-width:100%;margin:0 auto"><figcaption>图2：19｜缓冲生命周期：谁申请的设备，谁负责收好 · 点击图片放大查看</figcaption></figure>
+<p>从“缓存几何模板”分到甲、乙的箭头表示资源分配关系，甲的副本进入清理链时，乙仍有自己的副本可绘制。另一条模板淘汰链补充引用规则：箭头表示淘汰后的可能状态，仍被引用的CPU数组不会因释放GPU资源立即消失。</p>
+<p>例如甲楼层消失，甲的树叶网格移出并释放；乙楼层的副本继续使用。普通叶片材质仍共享，不能因为甲结束就销毁全场景的公共材质。缓存模板的GPU资源可被释放，但如果透明部件等其他对象仍引用该几何，CPU属性数组不会因一次 <code>dispose()</code> 自动消失；有需要时也可能重新上传。</p>
+<h2>预演和字牌各有自己的清单</h2>
+<p><strong>ghost预演</strong>是修改提交前的半透明方块。它使用临时实例网格、盒子几何和临时材质，取消或替换预演时，这三类资源都要释放。它的材质属于预演自己，适合一并清理；这与树叶共享材质的责任范围不同。</p>
+<p>字牌还带有文字纹理、文字几何和材质，分块清理会分别处理。它们的生命周期与重建相关，也解释了为什么透明复用对旧或新字牌一律要求刷新：不能继续使用已经交由旧分块释放的文字资源。</p>
+<h2>释放更明确，也要承认副本成本</h2>
+<p>历史73n相对D18的叶片克隆使10万格CPU几何属性增加102,960字节，城堡裁片增加1,013,496字节。这个小幅复制换来明确的分块归属。最终CeI4的12轮急切中，几何对象、纹理对象与CPU几何字节序列稳定，是这段测试没有持续增长的证据。</p>
+<p>测量并没有直接得到整块GPU显存占用。几何属性字节、JavaScript堆和渲染器对象数量各有口径；短循环稳定也不能证明任何使用时长都绝无泄漏。</p>
+<h2>读完自检</h2>
+<ol>
+<li>从场景移走网格就完成全部清理了吗？<strong>还要释放它拥有的GPU资源。</strong></li>
+<li>克隆叶片几何完全没有代价吗？<strong>有，需要复制属性数据，测试记录了增加量。</strong></li>
+<li><code>dispose()</code>会立刻清空所有CPU数组吗？<strong>不会，仍有引用的数组可以继续存在。</strong></li>
+</ol>
+<p>实现可查：<a href="../../frontend/src/viewer.ts">叶片与ghost清理</a>、<a href="../../frontend/src/signText.ts">分块与字牌释放</a>。证据可查：<a href="../RENDERING_OPTIMIZATION_LOG.md">优化实验记录</a>实验08与最终内存检查。返回<a href="index.html">总目录</a>。</p>
+<p>图示源文件：<a href="../../figures/rendering-guide/19-gpu-buffer-lifetime-01.md">图1</a> · <a href="../../figures/rendering-guide/19-gpu-buffer-lifetime-02.md">图2</a>。</p>
+<div class="pager"><a href="18-leaf-instancing.html">← 上一篇</a><a href="20-transparent-reuse.html">下一篇 →</a></div><p class="source-link"><a href="19-gpu-buffer-lifetime.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

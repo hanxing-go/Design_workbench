@@ -1,0 +1,7 @@
+flowchart LR
+    original["正常合批"] --> cpuWorld["CPU写世界坐标"]
+    cpuWorld --> usualShader["常规顶点变换"]
+    attempt["实验方案"] --> extra["额外保存<br/>局部位置与偏移"]
+    extra --> customShader["显卡按原顺序变换"]
+    usualShader --> compare["同相机比较画面"]
+    customShader --> compare

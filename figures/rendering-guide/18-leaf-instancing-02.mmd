@@ -1,0 +1,8 @@
+flowchart TD
+    group["同状态同可见面"] --> shape["保留树叶局部形状"]
+    shape --> table["建立实例位置表"]
+    table --> leafOne["树叶甲<br/>放到甲坐标"]
+    table --> leafTwo["树叶乙<br/>放到乙坐标"]
+    leafOne --> draw["按实例批次绘制"]
+    leafTwo --> draw
+    draw --> owner["点选仍对应源方块"]

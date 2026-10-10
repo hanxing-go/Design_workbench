@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>05：只更新发生变化的位置索引 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html" aria-current="page">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>05：只更新发生变化的位置索引</h1>
+<p>持续保存“哪个位置有什么方块”的索引，并只更新变化分块，可以避免每次操作都重新扫描整个场景。（状态：已采用。）</p>
+<h2>先用仓库台账理解</h2>
+<p>仓库每次只换一个货架的商品，如果都重新盘点全仓库，工作量会随库存增长。维护一本位置台账，移走旧商品时删掉记录，放入新品时写入记录，就能直接查询某个格位有没有东西。</p>
+<p>货架对应分块，商品对应方块，位置台账对应占用索引。这个比喻只说明索引维护；真实项目还要处理相邻方块遮挡，以及数据包替换和资源切换的生命周期。</p>
+<h2>为什么绘制需要台账</h2>
+<p>画一个方块前，要判断它旁边是否有能遮住表面的邻居。位置映射表，也就是 <code>Map</code>，按 <code>x,y,z</code> 这样的坐标键保存方块数据，让邻居查询可以直接定位，不必逐个寻找。</p>
+<p>此前 <code>occupied()</code> 在调用时遍历全部方块，建立临时映射，还按当前切层筛选。现在索引是长期保存的完整场景数据，切层以上的方块也在其中；需要判断可见邻居时，另外检查邻居高度是否超过当前层。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/05-incremental-occupancy-01.png" alt="图1：05：只更新发生变化的位置索引" loading="lazy" style="width:1052px;max-width:100%;margin:0 auto"><figcaption>图1：05：只更新发生变化的位置索引 · 点击图片放大查看</figcaption></figure>
+<p>上方每次都重新盘点，下方只替换变化货架对应的记录。这里替换的是一个分块的所有旧、新记录，并非只根据画面猜测某个方块是否变化。</p>
+<p>收到更新数据包后，程序收集新增、修改和删除的分块编号。对每个变化分块，先删除旧方块坐标，再写入新方块；整块删除时就不再写入。资源或整个场景清空时，索引也一起清空，防止旧数据残留。</p>
+<h2>为什么还要通知邻居</h2>
+<p>假设边长为 16 格的两个分块在横向相接。删掉 <code>(15,2,3)</code> 的方块后，另一分块 <code>(16,2,3)</code> 的左表面会露出来。只重建被删除方块所在分块，会让邻居仍缺少这张表面。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/05-incremental-occupancy-02.png" alt="图2：05：只更新发生变化的位置索引" loading="lazy" style="width:422px;max-width:100%;margin:0 auto"><figcaption>图2：05：只更新发生变化的位置索引 · 点击图片放大查看</figcaption></figure>
+<p>图中的十五和十六是跨分块边界的相邻横坐标，另外两个坐标相同。邻居使用已经更新的台账，才知道原来被遮住的面现在需要画出。</p>
+<p>因此当前会安排变化分块及其六个面相邻分块重建。六个方向对应左右、上下、前后，不包含斜对角；这里的表面遮挡规则只依赖面相邻关系。即使修改发生在分块内部，也保守安排六邻居，尚未细分“是否真的触到边界”。</p>
+<h2>适用、代价与验证边界</h2>
+<p>这种办法适合多数更新只影响少量分块、但总场景很大的情况。首次载入仍要写入全部方块，完整导入不因此变成固定耗时。长期映射表也需要额外内存，坐标字符串和方块引用都占空间。</p>
+<p>正确性依赖更新流程完整执行删除和插入；遗漏删除会留下不存在的邻居，遗漏邻居重建会留下缺面。应测试跨边界增删、整块删除、切层后恢复和资源切换，并分别检查实际表面与数据。完整位置表保留方块只证明数据存在，不能直接证明几何或纹理正确。</p>
+<p>这项改动减少重复扫描，但没有单独的最终帧率归因。项目记录中的流畅度是包含合批、切层调度和其他机制的整体结果。</p>
+<p>实现见 <a href="../../frontend/src/viewer.ts">viewer.ts</a> 的 <code>update</code>、<code>occupied</code> 和 <code>clearScene</code>；测量与核验见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化记录</a>。</p>
+<h2>读懂自检</h2>
+<p><strong>问：为什么删掉一个分块边界上的方块，还要重建旁边的分块？</strong></p>
+<p>答：旁边方块原来被它遮住的面会露出；数据更新正确，还必须把这个可见性变化反映到邻居几何里。</p>
+<p><a href="index.html">返回总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/05-incremental-occupancy-01.md">图1</a> · <a href="../../figures/rendering-guide/05-incremental-occupancy-02.md">图2</a>。</p>
+<div class="pager"><a href="04-block-picking.html">← 上一篇</a><a href="06-local-layer-cut.html">下一篇 →</a></div><p class="source-link"><a href="05-incremental-occupancy.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

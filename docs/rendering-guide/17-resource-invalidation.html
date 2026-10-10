@@ -1,0 +1,29 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>17｜资源失效：材料换版，旧说明书也要换 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html" aria-current="page">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>17｜资源失效：材料换版，旧说明书也要换</h1>
+<p><strong>人话一句：资源包换了，即使方块名称没变，也要重新取得模型和贴图，并丢掉迟到的旧图片。</strong></p>
+<p><strong>状态：已采用。</strong> 后端把资源标识加入分块传输版本，前端清理依赖旧资源的内容，异步纹理按当前标识确认后才生效。</p>
+<h2>为什么“名字相同”还不够</h2>
+<p>想象你按照旧版装修说明书贴墙纸，仓库随后换了另一批墙纸。订单上仍写“石砖”，但颜色、拼图位置甚至立体形状都可能变了。如果系统只检查方块名称和建筑坐标，就可能错误判断“一切没变”，继续显示旧材料。</p>
+<p><strong>资源包</strong>提供贴图、模型等材料。<strong>资源哈希</strong>是用来辨认内容版本的一串标识，像说明书上的版本号。<strong>失效</strong>表示旧结果依赖的材料已经变化，旧缓存不能继续当作新结果使用；用户建筑的正式方块数据仍保留，重新生成的是显示内容。</p>
+<h2>从后端到前端的交接</h2>
+<p>后端渲染缓存检查资源包对象、方块目录对象和资源哈希。发现变化时，相关渲染分块需要重新准备。传给前端的分块版本标签包含“资源哈希＋分块内容版本”，所以方块状态完全相同，资源换版也会使传输标签变化，模型会重新发送。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/17-resource-invalidation-01.png" alt="图1：17｜资源失效：材料换版，旧说明书也要换" loading="lazy" style="width:1136px;max-width:100%;margin:0 auto"><figcaption>图1：17｜资源失效：材料换版，旧说明书也要换 · 点击图片放大查看</figcaption></figure>
+<p>从“只看方块内容”开始的是旧判断：名称坐标未变，会一路走到误用旧资源。另一条从“资源包换版”开始，箭头表示版本更新、重新传输、清理旧显示和构建新显示的处理顺序，两条线是在对比两种判断方式。</p>
+<p>前端收到新资源哈希后，清理旧分块网格、占用索引、透明集合、模型与几何缓存，也清空缩略图缓存和编辑预演的ghost。这里的<strong>ghost</strong>就是应用修改前显示的半透明预览块，它也依赖显示资源，不能带着旧内容继续留在新场景里。</p>
+<p>新模型与新贴图图集的定位表随数据进入前端，纹理图片异步加载。几何重建会等待当前纹理准备好，并再次检查等待期间有没有更新的纹理任务出现。这让“新模型配旧图集图片”这种错位组合受到约束。</p>
+<h2>更晚返回，不代表更新</h2>
+<p><strong>异步加载</strong>是发出请求后先做其他工作，等图片返回再接着处理。网络完成顺序没有保证：先请求的资源甲，可能比后请求的资源乙更晚到。若简单采用“最后返回的图片”，旧甲就会盖掉新乙。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/17-resource-invalidation-02.png" alt="图2：17｜资源失效：材料换版，旧说明书也要换" loading="lazy" style="width:472px;max-width:100%;margin:0 auto"><figcaption>图2：17｜资源失效：材料换版，旧说明书也要换 · 点击图片放大查看</figcaption></figure>
+<p>从顶部看，这是先请求甲、随后切到乙的例子，到达的那张贴图要经过“匹配当前标识？”检查。匹配时走更新材质分支，不匹配时走释放迟到纹理分支；箭头表示检查流程，不承诺网络请求按发送顺序完成。</p>
+<p>例如甲请求一直没完成，你又切到乙。甲随后到达，检查发现“甲不是当前乙”，就调用释放方法并返回；它不能修改现用材质。乙到达并确认匹配后，统一更新普通、半透明、排序用和发光材质的贴图，再释放被替换的旧纹理。</p>
+<h2>得到了什么，也付出了什么</h2>
+<p>这项改动保证缓存正确换版，收益首先是减少错模型、错贴图和陈旧请求覆盖。资源变化时会有意放弃旧显示缓存，第一次重建与新贴图下载仍需要时间，不能同时承诺“换版完全不用重建”。</p>
+<p>当前精准浏览器测试覆盖了资源哈希替换、陈旧几何丢弃、图集更换及被替换纹理释放。它证明这些特定流程通过，不提供“所有资源包加载都快多少”的单项性能数字。资源失效与普通方块局部修改也有不同范围：资源变更可能影响整个显示，局部编辑通常只影响相关分块。</p>
+<h2>读完自检</h2>
+<ol>
+<li>石砖名字没变，贴图换了，可以继续沿用旧小图吗？<strong>不可以，资源标识变化会使旧小图失效。</strong></li>
+<li>请求甲最后到达，就应该覆盖乙吗？<strong>不能，要看它是否匹配当前资源标识。</strong></li>
+<li>清理旧显示等于删除用户建筑吗？<strong>不是，正式数据保留，重新构建显示结果。</strong></li>
+</ol>
+<p>实现可查：<a href="../../frontend/src/viewer.ts">前端资源与纹理处理</a>、<a href="../../src/design_workbench/adapters/rendering/cache.py">后端资源传输版本</a>。测试可查：<a href="../../tests/e2e/test_render_batching.py">资源与渲染回归</a>，记录可查：<a href="../RENDERING_OPTIMIZATION_LOG.md">优化实验记录</a>。返回<a href="index.html">总目录</a>。</p>
+<p>图示源文件：<a href="../../figures/rendering-guide/17-resource-invalidation-01.md">图1</a> · <a href="../../figures/rendering-guide/17-resource-invalidation-02.md">图2</a>。</p>
+<div class="pager"><a href="16-bounded-caches.html">← 上一篇</a><a href="18-leaf-instancing.html">下一篇 →</a></div><p class="source-link"><a href="17-resource-invalidation.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

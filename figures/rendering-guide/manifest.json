@@ -1,0 +1,363 @@
+{
+  "generated_date": "2026-10-10",
+  "diagram_renderer": "@mermaid-js/mermaid-cli 11.12.0",
+  "chapters": [
+    {
+      "filename": "00-start-here.md",
+      "title": "00：屏幕里的建筑是怎样画出来的",
+      "diagrams": [
+        {
+          "id": "00-start-here-01",
+          "sha256": "993fffaf276d9c95a62969786136b1737dbf31bb0d0165750a0ba87bc1205c04",
+          "number": 1
+        },
+        {
+          "id": "00-start-here-02",
+          "sha256": "791d446bff2cb13a295038b0a1a4aa24e4629a5f3692857da7baa3cad4b3c094",
+          "number": 2
+        },
+        {
+          "id": "00-start-here-03",
+          "sha256": "f97db956e2c1b8b7e14bff05ea9a05758b18a4fa3277fdc4da49cdef915bf401",
+          "number": 3
+        }
+      ]
+    },
+    {
+      "filename": "01-opaque-batching.md",
+      "title": "01：把普通方块按材质合批绘制",
+      "diagrams": [
+        {
+          "id": "01-opaque-batching-01",
+          "sha256": "b88bf8259f4b8eb2c847063f58071c1494ce71d8af891712cf3d1a18805ae5bb",
+          "number": 1
+        },
+        {
+          "id": "01-opaque-batching-02",
+          "sha256": "8cf4571b5de1edeffb9c66b2717bf1a9c5aff9e429bffd13003e563325dd6c22",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "02-transparent-order.md",
+      "title": "02：让半透明表面按远近排队",
+      "diagrams": [
+        {
+          "id": "02-transparent-order-01",
+          "sha256": "199e30873ba3d5a32e07fa40cc804416839fc8949b051798cead4f64f23cd019",
+          "number": 1
+        },
+        {
+          "id": "02-transparent-order-02",
+          "sha256": "e73b731e4947166c7b306acf0420a66f018f8b511c1b64779a785c387ec76c20",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "03-sign-order.md",
+      "title": "03：让字牌文字与玻璃共享排序",
+      "diagrams": [
+        {
+          "id": "03-sign-order-01",
+          "sha256": "589c195e1e3d316d4008fe07c4d77e9bbe438b716959dfd3037ae60f85d762e1",
+          "number": 1
+        },
+        {
+          "id": "03-sign-order-02",
+          "sha256": "a39498a591f441f6864fdfa6b3f95c8e9bfaaa9972f5f5f5a0773d8b8c565f89",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "04-block-picking.md",
+      "title": "04：合批后仍能点中原来的方块",
+      "diagrams": [
+        {
+          "id": "04-block-picking-01",
+          "sha256": "09764304c696536ca5227f23ce8e2a6639c0e388cdeb11a4d9328fdedafaac80",
+          "number": 1
+        },
+        {
+          "id": "04-block-picking-02",
+          "sha256": "f9c82fb3491c85ff3a3c24500a232894e52067713f9def703dd843500c4f56f3",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "05-incremental-occupancy.md",
+      "title": "05：只更新发生变化的位置索引",
+      "diagrams": [
+        {
+          "id": "05-incremental-occupancy-01",
+          "sha256": "43a80aa350c2f838718c7451a83255e3cc0203144a3b9965bf2cdee246ebed08",
+          "number": 1
+        },
+        {
+          "id": "05-incremental-occupancy-02",
+          "sha256": "d2e5cb8ca97900648f53b271df2f1c8738a9ef9d5051da528707a0ac8656766c",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "06-local-layer-cut.md",
+      "title": "06：切层时只重建相关高度的分块",
+      "diagrams": [
+        {
+          "id": "06-local-layer-cut-01",
+          "sha256": "716d3e74be201ff898cb8660778a54e98651ab748daf0d29cc44ba477308cf86",
+          "number": 1
+        },
+        {
+          "id": "06-local-layer-cut-02",
+          "sha256": "076cab25f890911a5c0ab5c616d442140febbff8a131fe1af4fb48f17d71c0ed",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "07-frame-budget.md",
+      "title": "07：把几何重建分散到多帧",
+      "diagrams": [
+        {
+          "id": "07-frame-budget-01",
+          "sha256": "81b7be4fc594455de45c75e37f9697dbdfb473fa2d1548716eb8428fa20e5dfc",
+          "number": 1
+        },
+        {
+          "id": "07-frame-budget-02",
+          "sha256": "01777d380c3cd9e5fdd036939771d9e43cc87ba6ec6ae5b03ca9891184b68e5f",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "08-latest-input.md",
+      "title": "08：连续切层时使用最新目标",
+      "diagrams": [
+        {
+          "id": "08-latest-input-01",
+          "sha256": "4edbf4d5ad6c0e918f06cab5365831f49ee575016564b263697c1b080dc27435",
+          "number": 1
+        },
+        {
+          "id": "08-latest-input-02",
+          "sha256": "2894a50b2ca22b78c6492c38c2f645688f7a99bfb5e5b5c7c73fb86a4dcbb339",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "09-mesh-version-reuse.md",
+      "title": "09：变化条件相同时复用已有几何",
+      "diagrams": [
+        {
+          "id": "09-mesh-version-reuse-01",
+          "sha256": "2dbadcb1633f1e3c5968e813a3d02c081b911d6f5179062b90fd383326eaaef1",
+          "number": 1
+        },
+        {
+          "id": "09-mesh-version-reuse-02",
+          "sha256": "d7a20e7aedc8ab4c0c5210581e8efc496e979901c047b437cfc450f3c3c8a9aa",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "10-layer-input-fix.md",
+      "title": "10：先保存输入值，再同步控件",
+      "diagrams": [
+        {
+          "id": "10-layer-input-fix-01",
+          "sha256": "d7a62c39bda5ea0953454b671e32573fb8596cd32e548452f4a856682b91a0d9",
+          "number": 1
+        },
+        {
+          "id": "10-layer-input-fix-02",
+          "sha256": "bb8fe4c274bd459502591cf09e115bc3e6763492b4aee8a3c6bff115fbd6faa0",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "11-backend-read-cache.md",
+      "title": "11 · 场景没变，就沿用已经整理好的结果",
+      "diagrams": [
+        {
+          "id": "11-backend-read-cache-01",
+          "sha256": "5285504127cd8f815eb18ce9dabda8c1ab1c375986de30c479838f065f71839f",
+          "number": 1
+        },
+        {
+          "id": "11-backend-read-cache-02",
+          "sha256": "23da69c92b28c088f12bca46b830ed47a3d766193a415741562c078ca84fbd2d",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "12-chunk-decode-cache.md",
+      "title": "12 · 数据库变了，只拆开真正变化的分块",
+      "diagrams": [
+        {
+          "id": "12-chunk-decode-cache-01",
+          "sha256": "5ec72d4432dacab3055b37700e352cb688e5cd60bfff9b5e72b76bfa2124a11d",
+          "number": 1
+        },
+        {
+          "id": "12-chunk-decode-cache-02",
+          "sha256": "2b18de785707aa1c7cc6cfecdec4da3dfa56c62f65239eac13b48b00787ae33d",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "13-local-chunk-write.md",
+      "title": "13 · 保存局部修改时，直接寻找附近坐标",
+      "diagrams": [
+        {
+          "id": "13-local-chunk-write-01",
+          "sha256": "9a0c6726ba422b1d13eff880303c42014cb6fbe267740ff7c0947d0b3eab6146",
+          "number": 1
+        },
+        {
+          "id": "13-local-chunk-write-02",
+          "sha256": "3041b244ab11cec25b109a4a18483309b1f36de671966458870eefa280e684d8",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "14-edit-net-delta.md",
+      "title": "14 · 记住碰过哪些坐标，只比较最后的净变化",
+      "diagrams": [
+        {
+          "id": "14-edit-net-delta-01",
+          "sha256": "e2e68fe5c7aaf982d984cbab3ba1e063e74a001d3583f32cfc5ef1e9648f4ede",
+          "number": 1
+        },
+        {
+          "id": "14-edit-net-delta-02",
+          "sha256": "78f31505a10960ca2b98a9312781756e84b711e6b4d83b8ee49dae6f5b33b67b",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "15-independent-thumbnails.md",
+      "title": "15｜独立缩略图：小照片有自己的摄影棚",
+      "diagrams": [
+        {
+          "id": "15-independent-thumbnails-01",
+          "sha256": "75f83a1cbe2a26c3adc2256cff3e7c6cfd05a9ae93ba5711a3d59e629a152921",
+          "number": 1
+        },
+        {
+          "id": "15-independent-thumbnails-02",
+          "sha256": "1ef5de0add05366260e7ce391a992fadc114d75eba4426b4877c8839d539a288",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "16-bounded-caches.md",
+      "title": "16｜有界缓存：架子要有容量，也要会腾位置",
+      "diagrams": [
+        {
+          "id": "16-bounded-caches-01",
+          "sha256": "336767f9f835b610d786747f4aadcea2bb789803758616e402d49c6ec068ca8f",
+          "number": 1
+        },
+        {
+          "id": "16-bounded-caches-02",
+          "sha256": "f1a2e2fb5d1567b72e7ea72bf2fddc5e4309c1965c5a54442027df7d3d2a44e6",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "17-resource-invalidation.md",
+      "title": "17｜资源失效：材料换版，旧说明书也要换",
+      "diagrams": [
+        {
+          "id": "17-resource-invalidation-01",
+          "sha256": "7219e0350905166cf618cb6518ecb52cd8f3cbf8473ff5e5f10afc1831a75d84",
+          "number": 1
+        },
+        {
+          "id": "17-resource-invalidation-02",
+          "sha256": "480c91b420fb22c47a9c54590e2d50b1dafc7e6ff49f3a5e15ea503da2d6dd0a",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "18-leaf-instancing.md",
+      "title": "18｜树叶实例化：特殊材料保留合适的摆放方式",
+      "diagrams": [
+        {
+          "id": "18-leaf-instancing-01",
+          "sha256": "fb1697c0dcafe76e078746d90a1fa5afa4020fa0e80358ae58413429b236cfcd",
+          "number": 1
+        },
+        {
+          "id": "18-leaf-instancing-02",
+          "sha256": "d5512222f024ad846c72a133ffed4b3e5c06445d3817c105d5fa02740071d658",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "19-gpu-buffer-lifetime.md",
+      "title": "19｜缓冲生命周期：谁申请的设备，谁负责收好",
+      "diagrams": [
+        {
+          "id": "19-gpu-buffer-lifetime-01",
+          "sha256": "b1197fdb4ce84603c23522f9cbe300746d35ce3a3b78b82689f03281fce85448",
+          "number": 1
+        },
+        {
+          "id": "19-gpu-buffer-lifetime-02",
+          "sha256": "14b9f8b82601696b038b4ef8393f65a9c9f6f41aa77bef0aad6a06e6d86066e2",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "20-transparent-reuse.md",
+      "title": "20｜透明批次复用：没有动到窗户，就别重做整套窗户",
+      "diagrams": [
+        {
+          "id": "20-transparent-reuse-01",
+          "sha256": "b9a7dd73ae6c098ef862e5fddfa0e9ebb23d91b64dd82271d6e5fdd4c046af57",
+          "number": 1
+        },
+        {
+          "id": "20-transparent-reuse-02",
+          "sha256": "6a92e6e0f1c77894747a0c5ec93a4b29891d8f572466c7ad3c78798ebec5b584",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "filename": "21-rejected-vertex-shader.md",
+      "title": "21｜回退的顶点着色器：花更多内存，画面却没明显改善",
+      "diagrams": [
+        {
+          "id": "21-rejected-vertex-shader-01",
+          "sha256": "c174439a0c618da9d4bdcdbdb125391ad9579a13ff5a319b25d634ab40c91bda",
+          "number": 1
+        },
+        {
+          "id": "21-rejected-vertex-shader-02",
+          "sha256": "86e034e80e44036b10efcf18f7b2c2cd8de2f2b80198cd014a9f25b38cbe4b51",
+          "number": 2
+        }
+      ]
+    }
+  ]
+}

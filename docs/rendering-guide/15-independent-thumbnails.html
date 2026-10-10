@@ -1,0 +1,29 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>15｜独立缩略图：小照片有自己的摄影棚 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html" aria-current="page">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>15｜独立缩略图：小照片有自己的摄影棚</h1>
+<p><strong>人话一句：材料栏拍方块小照片时，用另一张小画布，让建筑主画布继续做自己的事。</strong></p>
+<p><strong>状态：已采用。</strong> 当前 <code>Viewer.thumbnail()</code> 使用独立的 <code>thumbnailRenderer</code>，并缓存生成的图片。</p>
+<h2>先想象一家摄影馆</h2>
+<p>建筑主画布像正在拍全家福的大摄影棚：相机位置、画布大小、灯光和已经画出的内容都准备好了。材料栏里的石头、楼梯等小图标，只需要一张“证件照”。如果每拍一张证件照，都把大摄影棚缩小、换掉被摄对象，再恢复全家福，来回搬动就是额外工作。</p>
+<p>这里的<strong>渲染器</strong>是负责把三维模型画成图片的工具。<strong>画布</strong>是它输出图片的地方。独立缩略图渲染器仍在同一个浏览器里，也仍然使用显卡；“独立”指它有自己的画布和绘制状态，不代表另开一台电脑或自动放到后台线程。</p>
+<h2>以前与现在的流程</h2>
+<p>原实现会临时改变主渲染器尺寸，把缩略图画到主画布，读取图片，再恢复原尺寸并请求重画建筑。恢复尺寸也要做工作，材料翻页时还可能连续重复许多次。现在把这一流程交给小图专用渲染器，主画布尺寸不再为拍小图来回改变。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/15-independent-thumbnails-01.png" alt="图1：15｜独立缩略图：小照片有自己的摄影棚" loading="lazy" style="width:852px;max-width:100%;margin:0 auto"><figcaption>图1：15｜独立缩略图：小照片有自己的摄影棚 · 点击图片放大查看</figcaption></figure>
+<p>从“以前：拍小图”开始的是原流程，经过缩小主画布，一路走到恢复尺寸、重画建筑，箭头表示操作先后。从“现在：拍小图”开始的是当前流程，到“已有图片？”分成两条路：有图直接取，无图才交给专用小画布拍照。</p>
+<p>缩略图默认是72×72像素，专用渲染器的像素倍率固定为1。这个选择只针对材料栏小图，不会降低建筑主画布分辨率。小图使用临时场景、灯光和相机，把方块摆在同一角度，得到PNG图片后交给材料卡片显示。专用渲染器首次需要时才创建，之后继续复用。</p>
+<h2>“同一张小图”怎么认出来</h2>
+<p><strong>缓存</strong>就是把已经做好的结果放到架子上，下次直接取。架子标签同时写上资源包标识、图片尺寸和完整模型内容。模型内容包含影响外观的状态，因此朝东的楼梯与朝西的楼梯有不同标签；同一方块改用另一套贴图，也有不同标签。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/15-independent-thumbnails-02.png" alt="图2：15｜独立缩略图：小照片有自己的摄影棚" loading="lazy" style="width:396px;max-width:100%;margin:0 auto"><figcaption>图2：15｜独立缩略图：小照片有自己的摄影棚 · 点击图片放大查看</figcaption></figure>
+<p>从最上面的楼梯选择往下看，标签检查决定走“返回旧PNG”，还是走临时拍照、缓存和清理。两条路线最后都汇入“材料卡片显示”，箭头表示这一次取图的处理顺序，不表示又要重画主建筑。</p>
+<p>例如你先翻到橡木楼梯，再看石头，最后返回同一个橡木楼梯状态。如果图片还在缓存中，就直接取PNG。改成另一种朝向，或者资源包更换，就需要生成相应新图。缓存最多保留256项，按插入先后移出最早项；经常查看某项不会自动把它移动到队尾，所以这里不是“最近最少使用”的LRU。</p>
+<p>生成小图时临时登记的模型会被移出，临时几何也会从几何缓存删除并调用释放方法。留下的是可复用的小图渲染器和有数量限制的图片缓存，不是每次拍照都永久堆积一个新三维场景。</p>
+<h2>它解决了什么，测量又说明什么</h2>
+<p>这项改动直接减少主画布尺寸切换和重复拍照。它有第二个渲染器的成本，小图首次生成也仍需要绘制和读取PNG；独立画布不能让搜索、网络请求等其他工作消失。</p>
+<p>最终CeI4包在本机RTX5060Ti、Chrome154的10万格连续GUI交互中，帧间隔P95为16.8ms，操作包含材料搜索、翻页和状态选择。这是整套优化后的结果，没有单独开关缩略图方案的对照，不能把全部帧率收益都算到这一项。综合操作中还存在一次50.1ms帧，完整证据见实验记录。</p>
+<h2>读完自检</h2>
+<ol>
+<li>拍小图的画布倍率为1，会让建筑主画布也降清晰度吗？<strong>不会，两者是独立画布。</strong></li>
+<li>朝向不同的楼梯能直接共用一张小图吗？<strong>完整模型不同，标签不同，应分别缓存。</strong></li>
+<li>图片缓存命中意味着又绘制了一次三维模型吗？<strong>不用，直接返回之前生成的PNG。</strong></li>
+</ol>
+<p>实现可查：<a href="../../frontend/src/viewer.ts">Viewer.thumbnail</a>。测量可查：<a href="../RENDERING_OPTIMIZATION_LOG.md">优化实验记录</a>的实验04与最终交互。继续阅读：<a href="16-bounded-caches.html">16｜有界缓存</a>，或返回<a href="index.html">总目录</a>。</p>
+<p>图示源文件：<a href="../../figures/rendering-guide/15-independent-thumbnails-01.md">图1</a> · <a href="../../figures/rendering-guide/15-independent-thumbnails-02.md">图2</a>。</p>
+<div class="pager"><a href="14-edit-net-delta.html">← 上一篇</a><a href="16-bounded-caches.html">下一篇 →</a></div><p class="source-link"><a href="15-independent-thumbnails.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>01：把普通方块按材质合批绘制 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html" aria-current="page">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>01：把普通方块按材质合批绘制</h1>
+<p>把能用同一种绘制设置的普通方块集中交给显卡，可以减少反复发出绘图指令的开销。（状态：已采用，树叶保留专门路径。）</p>
+<h2>先用送餐理解</h2>
+<p>一家餐厅要送五份餐，每份都派一辆车，发车、登记、停车会重复五次；同路的餐装到一辆车，餐本身没有少，运输手续却减少了。这里，每份餐对应一个方块的几何数据，车辆对应一次绘制调用，也就是程序向显卡发出的绘图请求。合批减少的是请求次数。</p>
+<p>这个比喻只解释“集中提交”，不表示把五份餐揉成一份。项目仍保留每个方块的形状、纹理和身份；也不会为了合批把楼梯变成立方体。</p>
+<h2>实际合并的是什么</h2>
+<p>几何数据记录模型的顶点、表面朝向、颜色和纹理坐标；材质规定这些表面怎样绘制，例如使用什么纹理、是否发光。材质不是方块名称。纹理图集把多种小图片放进一张大图，因此石头和砖块也可能使用同一个材质。</p>
+<p>此前按方块状态和可见面组合组织绘制，组合越多，请求越多。现在仍先复用这些组合的模型模板，再在每个边长为 16 格的分块内，把多数非半透明部件按实际材质合成几何网格。几何网格就是可提交绘制的一组表面。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/01-opaque-batching-01.png" alt="图1：01：把普通方块按材质合批绘制" loading="lazy" style="width:708px;max-width:100%;margin:0 auto"><figcaption>图1：01：把普通方块按材质合批绘制 · 点击图片放大查看</figcaption></figure>
+<p>上方表示原来的分组粒度，下方表示当前多加的一层材质合并。两条路径都画出原有模型；区别在于向显卡提交多少组数据。</p>
+<p>举例说，同一分块有三块石头和两块砖，五块都使用同一材质与图集，就能放进一个合并网格。若其中一块使用独立发光材质，或位于另一分块，它会归入另一批。合并函数先计算总顶点数，一次分配数组，再把每块的局部坐标加上它的世界位置；同时记录每段三角形属于哪个方块。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/01-opaque-batching-02.png" alt="图2：01：把普通方块按材质合批绘制" loading="lazy" style="width:619px;max-width:100%;margin:0 auto"><figcaption>图2：01：把普通方块按材质合批绘制 · 点击图片放大查看</figcaption></figure>
+<p>石头和砖汇入同一节点，是因为绘制设置相同，并非名字相同。网格同时保留形状与身份，后续点击仍能找到原方块。</p>
+<h2>适用与代价</h2>
+<p>这种办法适合“方块很多、状态组合很多、材质相对少”的场景。它没有进一步把相邻面拼成大面，也没有减少模型细节；遮挡面仍按原来的规则先剔除。显卡需要处理的可见三角形因此不一定减少，主要收益是降低提交开销。</p>
+<p>代价是合并后要保存各方块的顶点副本，比只保存模板和位置矩阵更占内存，重建也要复制数组。当前 <code>cutout</code> 层的树叶是例外：<code>cutout</code> 指贴图空洞被直接裁掉的绘制层。为减轻共面叶片的画面差异，树叶仍按状态和可见面使用实例网格，也就是共享形状、分别保存位置。不能把资源中的 <code>cutout</code> 标签直接理解成“全部都走树叶路径”。</p>
+<h2>怎样判断做对了</h2>
+<p>绘制调用减少只能说明提交变少，还要检查实际表面是否齐全、纹理是否正确、点击是否返回原身份。最终组合实现的十万格场景记录了 29,596 到 243 次调用的变化，但前后帧率采样时长不同，且树叶、透明处理和其他改进一起参与结果，不能把最终流畅度单独归功于本项。</p>
+<p>严格逐像素一致的验收尚未通过。现有几何覆盖、点选和截图检查支持已测场景正确显示，但不证明任意视角完全相同。</p>
+<p>实现见 <a href="../../frontend/src/viewer.ts">viewer.ts</a> 的 <code>rebuild</code> 与 <a href="../../frontend/src/chunkGeometry.ts">chunkGeometry.ts</a> 的 <code>mergedChunk</code>；测量条件见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化记录</a>。</p>
+<h2>读懂自检</h2>
+<p><strong>问：五块方块合成一个网格，是否说明它们变成了一个方块？</strong></p>
+<p>答：没有。合并的是绘制数据和提交方式，五块的形状、位置及三角形归属仍分别保存。</p>
+<p><a href="index.html">返回总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/01-opaque-batching-01.md">图1</a> · <a href="../../figures/rendering-guide/01-opaque-batching-02.md">图2</a>。</p>
+<div class="pager"><a href="00-start-here.html">← 上一篇</a><a href="02-transparent-order.html">下一篇 →</a></div><p class="source-link"><a href="01-opaque-batching.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

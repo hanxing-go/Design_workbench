@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>03：让字牌文字与玻璃共享排序 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html" aria-current="page">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>03：让字牌文字与玻璃共享排序</h1>
+<p>把字牌文字放进与玻璃相同的远近队列，可以修复透明合批后文字遮挡关系不正确的问题。（状态：已采用的正确性修复。）</p>
+<h2>先用橱窗告示理解</h2>
+<p>站在橱窗前，远处有一块红玻璃，中间有告示文字，近处有一块蓝玻璃。如果先画完所有玻璃，再把文字贴到最上面，文字就像浮在橱窗外；如果先画文字再画所有玻璃，远处玻璃也可能错误覆盖它。</p>
+<p>告示对应字牌文字表面，两块玻璃对应半透明方块，橱窗中的距离对应相机深度。比喻说明的是三者必须共同排队，不表示文字与玻璃使用相同颜料或相同材质。</p>
+<h2>问题为什么出现</h2>
+<p>字牌的木板和文字是不同绘制部件。文字先画在小画布上，再变成纹理图片，贴到一个平面上。这个平面带有透明区域，原先是独立网格，也就是单独管理的一组表面。</p>
+<p>玻璃改为全局合并后，若文字仍独立绘制，绘制器无法把文字插入大玻璃网格的中间。仅调高或调低整个文字对象的绘制优先级，不能同时满足“在远玻璃前、在近玻璃后”的关系。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/03-sign-order-01.png" alt="图1：03：让字牌文字与玻璃共享排序" loading="lazy" style="width:768px;max-width:100%;margin:0 auto"><figcaption>图1：03：让字牌文字与玻璃共享排序 · 点击图片放大查看</figcaption></figure>
+<p>上方的两种对象分别提交，文字只能相对于玻璃整批排队。下方改为按部件排队，文字可以插入两块玻璃之间。</p>
+<h2>当前怎样修复</h2>
+<p>刷新透明批次时，程序寻找标记为 <code>signText</code> 的文字网格，把它隐藏，避免重复绘制。随后复制它的材质，将文字几何展开成可合并的三角形数据，补齐表面朝向和白色顶点颜色，再交给全局透明管理器。</p>
+<p>材质是表面绘制的设置集合。文字保留自己的纹理与材质，不会换成玻璃的图片；统一索引清单遇到不同材质时，分成相应绘制组。原文字对象继续持有原纹理的生命周期，隐藏并不等于已经释放。</p>
+<p>例子中正确的顺序是“远红玻璃 → 文字 → 近蓝玻璃”。文字表面设为不可独立点选，点击仍选中支撑字牌的方块，而不是把某个笔画当作新的方块。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/03-sign-order-02.png" alt="图2：03：让字牌文字与玻璃共享排序" loading="lazy" style="width:704px;max-width:100%;margin:0 auto"><figcaption>图2：03：让字牌文字与玻璃共享排序 · 点击图片放大查看</figcaption></figure>
+<p>主竖线表示远到近的绘制顺序，旁边分支说明文字的额外规则。共享队列只统一排序，没有抹掉它的材质，也没有为文字制造新的编辑身份。</p>
+<h2>适用、代价与验证边界</h2>
+<p>这项修复适合含有可渲染字牌文字、并有玻璃遮挡关系的场景。每种文字纹理与材质仍可能增加绘制组，额外材质也需要释放；透明管理器释放复制的文字材质，原分块负责原文字纹理与材质，临时展开几何在合并后释放。</p>
+<p>它解决排序衔接问题，不会让不支持的导入格式自动获得字牌内容。用户别墅的旧格式曾仅做方块状态投影：原始附件虽然保存，渲染器没有从中读取字牌文字。该建筑的截图因此不能证明原字牌已正确显示；字牌验证使用可支持格式中的实际文字数据。</p>
+<p>应使用“文字夹在两块不同颜色玻璃之间”的专门样例，从多个方向比较，再核验点击返回的方块身份。现有严格像素验收仍有透明差异，本项也没有独立帧率收益数据；它首先保证合批后的行为合理。</p>
+<p>实现见 <a href="../../frontend/src/viewer.ts">viewer.ts</a> 的 <code>flushTransparency</code>、<a href="../../frontend/src/transparency.ts">transparency.ts</a> 和 <a href="../../frontend/src/signText.ts">signText.ts</a>；导入与像素边界见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化记录</a>。</p>
+<h2>读懂自检</h2>
+<p><strong>问：把文字加入透明队列，是否应该把原文字网格也继续画出来？</strong></p>
+<p>答：不应该。原网格被隐藏，由合并后的文字分段负责绘制，否则会重复显示；原对象仍承担原资源的释放责任。</p>
+<p><a href="index.html">返回总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/03-sign-order-01.md">图1</a> · <a href="../../figures/rendering-guide/03-sign-order-02.md">图2</a>。</p>
+<div class="pager"><a href="02-transparent-order.html">← 上一篇</a><a href="04-block-picking.html">下一篇 →</a></div><p class="source-link"><a href="03-sign-order.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

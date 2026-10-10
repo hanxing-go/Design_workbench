@@ -1,0 +1,7 @@
+flowchart LR
+    oldName["只看方块内容"] --> oldSame["名称坐标未变"]
+    oldSame --> oldSkip["误用旧模型贴图"]
+    pack["资源包换版"] --> token["版本标签含<br/>资源与分块标识"]
+    token --> resend["重新发送模型"]
+    resend --> clear["前端清旧显示"]
+    clear --> rebuild["按新资源构建"]

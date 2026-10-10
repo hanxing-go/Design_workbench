@@ -1,0 +1,8 @@
+flowchart TD
+  Hit["命中三角形十七"] --> Ends["累计结束十二和二十四"]
+  Ends --> Range["十七落在第二段"]
+  Range --> Cell["返回方块乙"]
+  Cell --> Position["原世界位置"]
+  Cell --> Flags["原分组与保护状态"]
+  Bounds["透明部件包围球"] --> Exact["通过粗筛后<br/>检测真实三角形"]
+  Exact --> Owner["返回该透明方块"]

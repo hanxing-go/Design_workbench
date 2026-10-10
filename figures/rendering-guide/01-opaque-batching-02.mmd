@@ -1,0 +1,7 @@
+flowchart TD
+  Stone["三块石头"] --> Shared["同一分块与材质"]
+  Brick["两块砖"] --> Shared
+  Shared --> Mesh["一个合并网格"]
+  Mesh --> Geometry["五块形状仍保留"]
+  Mesh --> Owners["每段记录方块身份"]
+  Other["另一材质或分块"] --> Separate["另外一批"]

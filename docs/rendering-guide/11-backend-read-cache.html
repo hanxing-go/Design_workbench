@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>11 · 场景没变，就沿用已经整理好的结果 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html" aria-current="page">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>11 · 场景没变，就沿用已经整理好的结果</h1>
+<p><strong>已采用。</strong> 你按一下“重新读取”，建筑没有变化，后台就不必重新拆开十万个方块再整理一遍。它先确认数据库是否变化；没有变化时，复用上次准备好的场景摘要和显示数据。</p>
+<p>这里的“后台”是 Python 服务，负责读取项目和准备发给浏览器的数据。<strong>缓存</strong>就是把计算结果暂时留在内存里，方便下次使用；它不是另一个保存文件，数据库仍是项目的正式记录。</p>
+<h2>像图书管理员留下一份已经核对的清单</h2>
+<p>想象管理员刚清点过十万本书。你再次询问馆藏数量，若这期间没人调整书架，直接回答上次的统计就够了。若有人还书、换书或改分类，管理员必须重新核对相关内容。</p>
+<p>对应到项目，书是方块，馆藏清单是缓存，正式借阅账本是数据库。这个比喻的边界是：程序不会靠“看起来没人操作”判断，而是让数据库报告是否发生过提交；这个报告也不会直接告诉它哪一格变了。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/11-backend-read-cache-01.png" alt="图1：11 · 场景没变，就沿用已经整理好的结果" loading="lazy" style="width:812px;max-width:100%;margin:0 auto"><figcaption>图1：11 · 场景没变，就沿用已经整理好的结果 · 点击图片放大查看</figcaption></figure>
+<p>这张图怎样读：从“以前再次读取”出发，每次都要经过“读入全部方块”和“重新统计”。从“现在再次读取”出发，会先检查变化标志；只有发生变化才走更新路线，没有变化就直接沿用上次结果。</p>
+<h2>怎样确认“没有变化”</h2>
+<p>项目使用 <strong>SQLite</strong>，一种把数据库放在本地文件中的工具。缓存为每个项目保留同一个只读连接，查询 <code>PRAGMA data_version</code>。可以把它理解为“这条连接看到的数据库变化标志”。别的连接提交修改后，这个标志会变化。</p>
+<p>“同一个连接”很关键：标志的数值只适合与这条连接上次读到的值比较，不能每次换一个连接，再把两个数字随意对照。这里的小写 <code>data_version</code> 也不是蓝图里的 Minecraft <code>DataVersion</code>；后者表示游戏数据格式版本，例如 3465，与数据库有没有被编辑是两件事。</p>
+<p>例如，缓存已记录项目修订 8。再次读取时标志未变，就使用修订 8 的结果。外部工具即使修改了数据库却没增加项目修订，数据库变化标志仍会触发重新读取。因此它不是只相信“修订号没变”。</p>
+<p>读取时使用 <strong>事务</strong>，即把相关读取放在同一份数据库快照中，避免摘要来自修改前、方块来自修改后的混搭。若编辑恰好与读取同时发生，本次可以返回一致的旧快照，下一次读取会发现变化。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/11-backend-read-cache-02.png" alt="图2：11 · 场景没变，就沿用已经整理好的结果" loading="lazy" style="width:412px;max-width:100%;margin:0 auto"><figcaption>图2：11 · 场景没变，就沿用已经整理好的结果 · 点击图片放大查看</figcaption></figure>
+<p>这张图怎样读：菱形判断的是同一数据库连接观察到的变化标志，两个分支都要得到一份完整、前后一致的结果。下方“释放缓存锁”之后才转成网页数据，表示锁保护的是缓存准备过程；没有变化的分支能更快让后面的请求继续工作。</p>
+<h2>快在哪里，又有哪些边界</h2>
+<p>100,000 格混合城镇的独立测量中，无变化的“载入＋准备显示数据”中位数从 <strong>992.37 ms 降至约 0.26 ms</strong>；摘要读取从 347.42 ms 降至约 0.13 ms。中位数是把多次耗时排序后居中的值。这些是后台函数的热缓存结果，不包括网络、网页处理或第一次打开项目。</p>
+<p>缓存有总共 500,000 个已存储格、最多 4 个项目和估算字节容量的限制，不会永久保留所有建筑。旧条目按最近使用情况淘汰。百万格建筑超过容量，会在请求结束时被淘汰，后续读取仍需重新准备，无法享受上述热缓存速度。</p>
+<p><strong>RLock</strong> 是当前保护缓存的一把可重复进入的锁，让多个请求不会同时改坏缓存；代价是大项目的冷读取可能让其他项目等待。返回的嵌套数据还共享缓存引用，直接调用 Python 接口的代码应只读使用。网页接口只是把数据转成 JSON，不会修改这些引用。</p>
+<p>实现见 <a href="../../src/design_workbench/adapters/rendering/cache.py">缓存</a>和 <a href="../../src/design_workbench/adapters/storage/sqlite.py">数据库读取</a>；测量与限制见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化实验记录</a>。</p>
+<h2>读懂自检</h2>
+<p>数据库没变，是否还要逐格解压？<strong>答案：不需要，可以复用缓存。</strong></p>
+<p>0.26 ms 是否表示十万格第一次打开只需这么久？<strong>答案：不是，它只测已经准备好缓存后的后台读取函数。</strong></p>
+<p><a href="index.html">总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/11-backend-read-cache-01.md">图1</a> · <a href="../../figures/rendering-guide/11-backend-read-cache-02.md">图2</a>。</p>
+<div class="pager"><a href="10-layer-input-fix.html">← 上一篇</a><a href="12-chunk-decode-cache.html">下一篇 →</a></div><p class="source-link"><a href="11-backend-read-cache.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

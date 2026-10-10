@@ -1,0 +1,6 @@
+flowchart LR
+    cells["数据清单<br/>石头A、石头B、玻璃C"] --> opaque["实体表面网格<br/>保留A与B的外形"]
+    cells --> glass["透明表面网格<br/>保留C的外形"]
+    opaque --> picture["同一张画面"]
+    glass --> picture
+    cells --> editing["独立方块身份仍存在<br/>A、B、C可分别编辑"]

@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>14 · 记住碰过哪些坐标，只比较最后的净变化 · 渲染优化图解</title><link rel="stylesheet" href="guide.css"></head><body><header><a href="index.html"><strong>渲染优化图解</strong></a><span>从零理解 · 每篇一个点 · 图示可放大</span></header><div class="layout"><nav aria-label="阅读目录"><h2>一点一篇 · 阅读目录</h2><a href="index.html">总目录与阅读方法</a><a href="00-start-here.html">00：屏幕里的建筑是怎样画出来的</a><a href="01-opaque-batching.html">01：把普通方块按材质合批绘制</a><a href="02-transparent-order.html">02：让半透明表面按远近排队</a><a href="03-sign-order.html">03：让字牌文字与玻璃共享排序</a><a href="04-block-picking.html">04：合批后仍能点中原来的方块</a><a href="05-incremental-occupancy.html">05：只更新发生变化的位置索引</a><a href="06-local-layer-cut.html">06：切层时只重建相关高度的分块</a><a href="07-frame-budget.html">07：把几何重建分散到多帧</a><a href="08-latest-input.html">08：连续切层时使用最新目标</a><a href="09-mesh-version-reuse.html">09：变化条件相同时复用已有几何</a><a href="10-layer-input-fix.html">10：先保存输入值，再同步控件</a><a href="11-backend-read-cache.html">11 · 场景没变，就沿用已经整理好的结果</a><a href="12-chunk-decode-cache.html">12 · 数据库变了，只拆开真正变化的分块</a><a href="13-local-chunk-write.html">13 · 保存局部修改时，直接寻找附近坐标</a><a href="14-edit-net-delta.html" aria-current="page">14 · 记住碰过哪些坐标，只比较最后的净变化</a><a href="15-independent-thumbnails.html">15｜独立缩略图：小照片有自己的摄影棚</a><a href="16-bounded-caches.html">16｜有界缓存：架子要有容量，也要会腾位置</a><a href="17-resource-invalidation.html">17｜资源失效：材料换版，旧说明书也要换</a><a href="18-leaf-instancing.html">18｜树叶实例化：特殊材料保留合适的摆放方式</a><a href="19-gpu-buffer-lifetime.html">19｜缓冲生命周期：谁申请的设备，谁负责收好</a><a href="20-transparent-reuse.html">20｜透明批次复用：没有动到窗户，就别重做整套窗户</a><a href="21-rejected-vertex-shader.html">21｜回退的顶点着色器：花更多内存，画面却没明显改善</a></nav><main><div class="intro">先看图，再读图下说明。第一次遇到的术语在正文解释；源码是延伸阅读。</div><h1>14 · 记住碰过哪些坐标，只比较最后的净变化</h1>
+<p><strong>已采用。</strong> 一次编辑只碰过几个坐标，就只比较这些坐标的前后结果，避免把十万个没动过的方块全部排序、比较。反复修改同一格，最终会合并为这格真正留下的变化。</p>
+<p>这里的<strong>净变化</strong>是“一次请求开始前，与全部操作执行完之后的差别”。它不是鼠标点击次数，也不是过程中出现过的每一种临时方块。</p>
+<h2>像做菜时记住用过的调料罐</h2>
+<p>厨房有几百个调料罐。做一道菜只碰过盐、糖和胡椒，收工时只核对这三罐就够了，不必逐一检查所有罐子。若某罐被拿出来又原样放回，操作发生过，却没有留下库存变化。</p>
+<p>调料罐对应方块坐标，核对库存对应比较方块状态、分组和来源区域。比喻有一个边界：程序仍先复制场景的坐标表，让试算不会直接改坏正式场景。复制的是“坐标对应哪个方块”的表，不是逐个重造所有方块对象，这称为<strong>浅复制</strong>；本优化没有省掉它。省掉的是结尾那次全场景排序和比较。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/14-edit-net-delta-01.png" alt="图1：14 · 记住碰过哪些坐标，只比较最后的净变化" loading="lazy" style="width:952px;max-width:100%;margin:0 auto"><figcaption>图1：14 · 记住碰过哪些坐标，只比较最后的净变化 · 点击图片放大查看</figcaption></figure>
+<p>这张图怎样读：两条路线开始时都复制场景坐标表，正式场景都不会被试算直接修改。变化在操作结束后：旧路线检查全场景，新路线只检查写过的坐标，最终仍得到同样的净变化清单。</p>
+<h2>谁来保证没有漏记</h2>
+<p>各种编辑工具最终都通过一个叫 <code>put()</code> 的写入入口改变工作副本。入口负责检查坐标边界、规范化方块状态、保护内容和编辑预算，并把写过的坐标放进 <strong>set</strong>，即不允许重复元素的集合。</p>
+<p>某一坐标写了三次，集合里仍只有一个坐标。结束时，只对集合里的坐标取“原始方块”和“最终方块”，不相同的才加入 <strong>delta</strong>，也就是正式保存和撤销需要的差异清单。未经过写入入口的坐标保持不变，因此不用再比较。</p>
+<p>例如开始时 A 是石头，B 为空。一次请求先把 A 换成木板，再把 A 恢复成原来的石头；随后在 B 放砖块。若 A 的分组和来源区域也恢复原样，最后只留下 B 的新增；若分组被改变，A 仍算变化，不能只看材料名字。</p>
+<figure class="diagram"><img src="../../figures/rendering-guide/14-edit-net-delta-02.png" alt="图2：14 · 记住碰过哪些坐标，只比较最后的净变化" loading="lazy" style="width:352px;max-width:100%;margin:0 auto"><figcaption>图2：14 · 记住碰过哪些坐标，只比较最后的净变化 · 点击图片放大查看</figcaption></figure>
+<p>这张图怎样读：甲先变成木板又完整恢复成石头，所以“操作过”不等于“最终有变化”。乙从空格变成砖块，最后只有乙进入差异清单；三次写入仍计入工作量预算，不会因为差异只有一格就算成一次操作。</p>
+<p>重复写入仍计入 <code>touched</code>，即尝试写入的次数。预算按实际工作量检查，不能借助“最后没有净变化”绕过大量操作的限制。变换工具移动方块时，清除来源和写入目标也都通过这个入口记录，不会只记录目的地而漏掉删除。</p>
+<h2>规划完成之后，还没有正式保存</h2>
+<p><strong>编辑规划</strong>是在工作副本上试算，得到完整的新方块表、净变化和写入次数。预演可以展示这份计划而不写入数据库。正式编辑还要进入保存事务，核对期望修订，原子写入分块、元数据和历史。若其他请求已提交新修订，事务会拒绝过期计划。</p>
+<p>因此，“只比较触点”不代表“只做这一步就保存成功”。它没有改变源场景隔离、保护规则、操作预算或事务边界。</p>
+<p>105,102 格场景的 11 次独立函数测量中，编辑规划中位数分别为：1 格 <strong>67.00→2.51 ms</strong>，100 格 <strong>67.59→3.33 ms</strong>，1,000 格 <strong>73.66→8.63 ms</strong>。新旧完整方块表、净差异与写入次数一致。</p>
+<p>这些数字只测 <code>Editor.plan</code>，不包含数据库载入、持久提交、网络或网页刷新。大量范围选择仍可能扫描场景，完整坐标表也仍要复制；不能把局部差异的收益解释为所有编辑都立即完成。</p>
+<p>实现见 <a href="../../src/design_workbench/domain/editing.py">编辑规划</a>、<a href="../../src/design_workbench/application/scenes.py">应用层提交</a>和 <a href="../../src/design_workbench/adapters/storage/sqlite.py">数据库事务</a>；证据见 <a href="../RENDERING_OPTIMIZATION_LOG.md">优化实验记录</a>。</p>
+<h2>读懂自检</h2>
+<p>同一格改三次，必然保存三条变化吗？<strong>答案：不必，只比较开始与结束的结果，相同则没有净变化。</strong></p>
+<p>这项优化省掉了完整场景复制吗？<strong>答案：没有，仍复制坐标表；省掉的是最终全场景排序和比较。</strong></p>
+<p><a href="index.html">总目录</a></p>
+<p>图示源文件：<a href="../../figures/rendering-guide/14-edit-net-delta-01.md">图1</a> · <a href="../../figures/rendering-guide/14-edit-net-delta-02.md">图2</a>。</p>
+<div class="pager"><a href="13-local-chunk-write.html">← 上一篇</a><a href="15-independent-thumbnails.html">下一篇 →</a></div><p class="source-link"><a href="14-edit-net-delta.md">查看本篇 Markdown</a> · 图示为机制示意，实测以实验记录为准。</p></main></div><dialog aria-label="放大图示"><div class="zoom-toolbar"><span>图示</span><button data-minus type="button">缩小</button><button data-plus type="button">放大</button><button data-close type="button">关闭</button></div><div class="zoom-body"><img alt=""></div></dialog><script src="guide.js"></script></body></html>

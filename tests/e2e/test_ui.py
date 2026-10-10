@@ -51,7 +51,22 @@ def test_real_browser_edit_history_and_blueprint(tmp_path: Path) -> None:
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
+            # The home page lists real projects without creating one on a visit.
             page.goto(url)
+            page.wait_for_selector("#home-empty:not([hidden])")
+            assert page.request.get(url + "/api/projects").json()["items"] == []
+            assert page.locator("#home-title").is_visible()
+            page.locator("[data-home-guide]").first.click()
+            assert page.locator("#home-guide-dialog").is_visible()
+            page.keyboard.press("Escape")
+            page.locator("[data-home-create]").first.click()
+            page.locator("#home-project-name").fill("   ")
+            page.locator("#home-create-submit").click()
+            assert page.locator("#home-create-dialog").is_visible()
+            assert page.locator("#home-create-error").inner_text()
+            page.locator("#home-project-name").fill("我的建筑")
+            page.locator("#home-create-submit").click()
+            page.wait_for_url("**/?project=*")
             page.wait_for_function("window.workbench && !window.workbench.busy")
             assert page.locator("#layer-play").is_disabled()
             page.locator("#cabin").click()
@@ -221,6 +236,41 @@ def test_real_browser_edit_history_and_blueprint(tmp_path: Path) -> None:
             page.locator("#toggle-library").click()
             assert page.locator("#library").is_visible()
             page.screenshot(path=str(tmp_path / "browser.png"))
+
+            # Home project search, layout, return links, and blueprint import are functional.
+            page.locator(".workbench-home-link").click()
+            page.wait_for_selector(".project-card")
+            assert page.locator(".project-card").count() == 2
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+            page.locator("#home-search").fill("不存在的设计")
+            assert page.locator("#home-no-results").is_visible()
+            page.locator("#home-search").fill("重命名后的木屋")
+            assert page.locator(".project-card").count() == 1
+            page.locator("#design-toggle").click()
+            assert page.locator("#design-toggle").get_attribute("aria-pressed") == "true"
+            page.locator(".project-card").click()
+            page.wait_for_function("window.workbench && !window.workbench.busy")
+            assert page.locator("#scene-name").inner_text() == "重命名后的木屋"
+            page.goto(url)
+            page.wait_for_selector(".project-card")
+            page.locator("#home-import-file").set_input_files(str(downloaded))
+            page.wait_for_url("**/?project=*")
+            page.wait_for_function("window.workbench && !window.workbench.busy")
+            assert page.evaluate("window.workbench.summary.blocks") == 449
+            assert page.locator("#scene-name").inner_text() == "我的建筑"
+
+            # The sample shortcut creates a separate editable cabin, exactly once.
+            page.goto(url)
+            page.wait_for_selector(".project-card")
+            page.locator("#home-cabin").click()
+            page.locator("#home-create-submit").click()
+            page.wait_for_function(
+                "window.workbench && window.workbench.summary?.blocks === 449 && !window.workbench.busy"
+            )
+            assert page.evaluate("window.workbench.summary.revision") == 1
+            page.reload()
+            page.wait_for_function("window.workbench && !window.workbench.busy")
+            assert page.evaluate("window.workbench.summary.revision") == 1
             assert not errors
             browser.close()
     finally:

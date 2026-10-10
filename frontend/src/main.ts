@@ -7,6 +7,7 @@ import { typing } from './walkControls';
 
 const root = document.querySelector<HTMLDivElement>('#app')!;
 root.innerHTML = shell;
+document.title = 'Design Workbench · 建筑设计';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const input = (id: string) => el<HTMLInputElement>(id).value;
@@ -303,6 +304,16 @@ async function loadProjects(preferred?: string) {
   clearPreview();
   await refresh(true);
   history.replaceState({}, '', `?project=${project}`);
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem('workbench.recentProjects') ?? '{}');
+    const recents = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+    localStorage.setItem(
+      'workbench.recentProjects',
+      JSON.stringify({ ...recents, [project]: Date.now() }),
+    );
+  } catch {
+    /* Recent projects are optional when browser storage is unavailable. */
+  }
 }
 
 async function loadCatalog() {
@@ -865,7 +876,7 @@ bind('check', async () => {
   el('apply-rules').hidden = !result.proposals.length;
 });
 bind('apply-rules', () => preview([{ op: 'set', blocks: ruleProposals }]));
-bind('cabin', async () => {
+async function createCabin() {
   await commit([
     {
       op: 'fill',
@@ -925,7 +936,8 @@ bind('cabin', async () => {
   viewer.fitted = false;
   await refresh(true);
   message('木屋起稿完成，可继续自由编辑');
-});
+}
+bind('cabin', createCabin);
 document.addEventListener('keydown', (event) => {
   const target = event.target instanceof HTMLElement ? event.target : null;
   if (
@@ -1024,6 +1036,8 @@ void safely(async () => {
   const data = await api<{ items: Material[] }>('/api/catalog?query=oak_planks&limit=1');
   if (data.items[0]) await chooseMaterial(data.items[0]);
   message('工作台就绪 · 所有修改自动保存');
+  if (params.get('starter') === 'cabin' && summary?.blocks === 0 && summary.revision === 0)
+    await createCabin();
 });
 
 let polling = false;

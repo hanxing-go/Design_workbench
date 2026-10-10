@@ -168,6 +168,24 @@ def create_app(settings: Settings) -> FastAPI:
             raise WorkbenchError("RESOURCES_NOT_READY", "素材尚未配置。")
         return FileResponse(workbench.pack.directory / "atlas.png", media_type="image/png")
 
+    @app.get("/api/ui/sprites/{name}.png")
+    def ui_sprite(name: str) -> FileResponse:
+        sprites = {
+            "diamond": "item/diamond",
+            "emerald": "item/emerald",
+            "iron_pickaxe": "item/iron_pickaxe",
+            "book": "item/book",
+            "torch": "block/torch",
+        }
+        if name not in sprites or workbench.pack is None:
+            raise WorkbenchError("ASSET_NOT_FOUND", "界面物品贴图不可用。")
+        path = (
+            workbench.pack.directory / "assets" / "minecraft" / "textures" / f"{sprites[name]}.png"
+        )
+        if not path.is_file():
+            raise WorkbenchError("ASSET_NOT_FOUND", "界面物品贴图不可用。")
+        return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-cache"})
+
     @app.get("/api/projects")
     def list_projects() -> dict[str, Any]:
         items, errors = [], []

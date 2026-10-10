@@ -25,6 +25,21 @@
 body {
   margin: 0;
 }
+.workbench-home-link {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  color: #acc08f;
+  text-decoration: none;
+  border: 1px solid #4b5a3b;
+  background: #2b3525;
+  flex-shrink: 0;
+}
+.workbench-home-link:hover {
+  color: #d9edc3;
+  background: #3e5032;
+}
 #app {
   height: 100dvh;
   min-height: 520px;

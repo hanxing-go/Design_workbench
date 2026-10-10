@@ -67,9 +67,11 @@ Linux（WSL Ubuntu 22.04）执行 `bash scripts/linux_check.sh`：54 项核心�
 
 后续远程运行 `38013163565`、`38028681886`、`38031020887` 的失败集中在四条第一人称浏览器测试；最新运行的 Windows/Linux 代码检查、非浏览器测试、构建和安装验证均通过，浏览器任务为 4 项失败、18 项通过，包含新增的 AI 任务流程。
 
-在 WSL Ubuntu 22.04 对照同版本 Playwright Chromium 153.0.8010.12：默认 headless shell 锁定指针后产生额外的指针回中事件，鼠标位移出现 `+700,+400` 后紧接 `-700,-400`，转向相互抵消；切换 `channel="chromium"` 使用完整 Chromium 后，位移正常，原有四条测试全部通过。Windows Chrome 154.0.8037.98 的四条测试也通过。未修改测试断言或第一人称实现。
+在 WSL Ubuntu 22.04 对照同版本 Playwright Chromium 153.0.8010.12：默认 headless shell 锁定指针后产生额外的指针回中事件，鼠标位移出现 `+700,+400` 后紧接 `-700,-400`，转向相互抵消；切换 `channel="chromium"` 使用完整 Chromium 后，位移正常，原有四条测试全部通过。Windows Chrome 154.0.8037.98 的四条测试也通过。第一人称实现保持不变。
 
 切换通道后，本地 Linux 全部浏览器与资源回归为 22 项通过、73 项未选中，包含第一人称、AI 任务控制和真实截图流程；报告为 `artifacts/ci-diagnosis/browser-linux-chromium.xml`。
+
+远程重跑 `38032598839` 为 21 项通过、1 项失败：木屋测试固定按 W 一秒，但 CI 较慢的绘制帧结合每帧 50ms 位移上限，只前进 2.8 格。测试改为先等待指针锁定回调完成、画布获得焦点，再在有限超时内等待相机实际穿过墙面。室内坐标范围、鼠标转向、普通/加速速度、单帧暂停位移上限和后续编辑历史断言均保留。
 
 CI 的 `browser` 任务设置 `DW_BROWSER_CHANNEL=chromium`，所有浏览器流程及截图子进程使用 Playwright 随附的完整 Chromium。`playwright install --with-deps chromium` 已安装所需浏览器，不依赖本机桌面 Chrome。手动进行 Linux 第一人称验收时同样指定该通道：
 

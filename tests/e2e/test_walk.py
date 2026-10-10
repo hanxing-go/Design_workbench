@@ -116,10 +116,18 @@ def state(page: Page) -> dict:
     )
 
 
+def wait_locked(page: Page) -> None:
+    # pointerLockElement can change before the handler focuses the canvas.
+    page.wait_for_function("""() => {
+      const v = window.workbench.viewer;
+      return v.walk.locked && document.activeElement === v.renderer.domElement;
+    }""")
+    page.locator("#walk-menu").wait_for(state="hidden")
+
+
 def lock(page: Page) -> None:
     page.locator("#walk-resume").click()
-    page.wait_for_function("window.workbench.viewer.walk.locked")
-    page.locator("#walk-menu").wait_for(state="hidden")
+    wait_locked(page)
 
 
 def unlock(page: Page, panel: str = "inspector") -> None:
@@ -154,7 +162,7 @@ def test_first_person_immersive_material_menu_and_layout_restore(
         [id, document.getElementById(id).parentElement.className || document.getElementById(id).parentElement.id]))""")
     assert page.locator("#walk-toggle").inner_text() == "第一人称"
     page.locator("#walk-toggle").click()
-    page.wait_for_function("window.workbench.viewer.walk.locked")
+    wait_locked(page)
     page.wait_for_function("document.querySelector('#stage canvas').clientWidth === innerWidth")
     assert page.locator("#stage").bounding_box() == {"x": 0, "y": 0, "width": 1440, "height": 1000}
     for selector in ("header", "footer", ".toolbar", "#library", "#inspector", "#walk-menu"):
@@ -213,7 +221,7 @@ def test_first_person_immersive_material_menu_and_layout_restore(
 
     page.set_viewport_size({"width": 640, "height": 500})
     page.locator("#walk-toggle").click()
-    page.wait_for_function("window.workbench.viewer.walk.locked")
+    wait_locked(page)
     page.wait_for_function("document.querySelector('#stage canvas').clientWidth === innerWidth")
     assert page.locator("#stage").bounding_box() == {"x": 0, "y": 0, "width": 640, "height": 500}
     unlock(page)
@@ -256,13 +264,16 @@ def test_walk_cabin_edits_history_reopen_and_conflict(
         "request", lambda r: requests.append(r.post_data_json) if r.url.endswith("/edit") else None
     )
     page.locator("#walk-toggle").click()
-    page.wait_for_function("window.workbench.viewer.walk.locked")
+    wait_locked(page)
     assert state(page)["fov"] == 70
     assert state(page)["position"][1] == pytest.approx(2.62)
     assert not state(page)["enabled"]
     page.keyboard.down("w")
-    page.wait_for_timeout(1000)
-    page.keyboard.up("w")
+    try:
+        # The per-frame movement cap makes software-rendered CI advance more slowly.
+        page.wait_for_function("window.workbench.viewer.camera.position.z < 9", timeout=15_000)
+    finally:
+        page.keyboard.up("w")
     inside = state(page)["position"]
     input_trace = page.evaluate("window.e1InputTrace")
     assert 4 < inside[2] < 9, (inside, input_trace)  # Through Z=10.
@@ -383,7 +394,7 @@ def test_walk_cabin_edits_history_reopen_and_conflict(
     toggle = page.locator("#walk-toggle")
     assert toggle.is_visible()
     toggle.click()
-    page.wait_for_function("window.workbench.viewer.walk.locked")
+    wait_locked(page)
     page.screenshot(path=str(ARTIFACTS / "narrow-controls.png"))
     page.keyboard.press("g")
     assert not state(page)["active"]
@@ -424,7 +435,7 @@ def test_walk_motion_mouse_speed_pause_and_shortcuts(
     page, _, _, _ = walk_page
     pose(page, [0, 10, 10], [0, 10, 0], orbit=True)
     page.locator("#walk-toggle").click()
-    page.wait_for_function("window.workbench.viewer.walk.locked")
+    wait_locked(page)
     assert state(page)["position"][1] == pytest.approx(1.62)
 
     def fly(keys: list[str], duration: int) -> float:
@@ -533,7 +544,7 @@ def test_walk_pick_distance_ground_layers_and_click_hold(
     settled(page)
     pose(page, [0.5, 0.5, 10], [0.5, 0.5, 0.5], orbit=True)
     page.locator("#walk-toggle").click()
-    page.wait_for_function("window.workbench.viewer.walk.locked")
+    wait_locked(page)
     pose(page, [0.5, 0.5, 10], [0.5, 0.5, 0.5])
     assert page.evaluate("window.workbench.viewer.pickCenter()") is None
     unlock(page)

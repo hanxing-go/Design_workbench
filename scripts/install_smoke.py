@@ -100,12 +100,36 @@ assert len(Catalog().blocks)==1003
 scene,report=Litematic(Catalog()).read(Path('portable.litematic').read_bytes())
 assert scene.summary()['blocks']==18
 print('Wheel frontend/catalog/create/edit/export verified')
+from design_workbench.bootstrap import Workbench
+from design_workbench.config import Settings
+from design_workbench.interfaces.tools import Tools
+from design_workbench.application.design_contracts import CandidateOpen
+control=Tools(Workbench(Settings.load()), isolated=False)
+project=control.call('project.create',{'request_id':'install-controls','request':{'name':'Installed controls'}})['project_id']
+task=control.call('design.start',{'project':project,'request_id':'install-task','expected_revision':0,'prompt':'Installed persistent task'})
+run_id=task['run_id']
+assert task['usage']['source']==''
+proposal=control.call('design.propose',{'run_id':run_id,'request_id':'install-propose','request':{'expected_revision':0,'request_id':'edit','operations':[{'op':'fill','bounds':{'low':[0,0,0],'high':[1,1,1]},'state':{'name':'stone'}}]},'explanation':'Preview before applying'})
+assert proposal['status']=='awaiting_approval'
+assert control.workbench.service(control.project_path(project)).summary()['revision']==0
+saved=control.call('candidate.save',{'run_id':run_id,'request_id':'install-candidate','expected_revision':0,'name':'Saved candidate'})
+assert saved['sha256']
+control.call('design.cancel',{'run_id':run_id,'request_id':'install-cancel'})
+control.close()
+control=Tools(Workbench(Settings.load()), isolated=False)
+assert control.call('design.status',{'run_id':run_id})['status']=='cancelled'
+clone=control.designs.open_candidate(run_id,saved['candidate_id'],CandidateOpen(request_id='open'))
+assert clone['project_id']!=project
+control.close()
+print('Installed design task, approval gate, persistence and candidate fork verified')
 """
         subprocess.run([str(binary), "-c", validate], check=True, env=env, cwd=directory)
         descriptions = subprocess.run(
             [*command, "tools"], check=True, capture_output=True, text=True, env=env, cwd=directory
         )
-        assert len(json.loads(descriptions.stdout)["tools"]) == 15
+        assert {"scene.commit_edit", "design.start", "candidate.save"} <= {
+            item["name"] for item in json.loads(descriptions.stdout)["tools"]
+        }
         p6_check = False
         if "ai" in args.extras.split(","):
             protocol_check = """
@@ -115,7 +139,7 @@ from mcp.client.stdio import stdio_client
 async def check():
     async with stdio_client(StdioServerParameters(command=sys.executable,args=['-m','design_workbench.interfaces.cli','mcp'])) as (read,write), ClientSession(read,write) as session:
         await session.initialize()
-        assert len((await session.list_tools()).tools)==15
+        assert {"scene.commit_edit", "design.start", "candidate.save"} <= {item.name for item in (await session.list_tools()).tools}
         result=await session.call_tool('catalog.search',{'query':'oak','limit':1})
         assert not result.isError and result.structuredContent['items']
 asyncio.run(check())
@@ -130,6 +154,7 @@ asyncio.run(check())
             "create_edit_export": True,
             "frontend_and_registry_in_wheel": True,
             "capture_frontend_and_tool_schemas_in_wheel": True,
+            "design_controls_and_candidates_in_wheel": True,
             "installed_extras": args.extras,
             "mcp_stdio_in_clean_environment": p6_check,
         }

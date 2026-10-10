@@ -17,6 +17,19 @@ from pydantic import BaseModel, ValidationError
 from design_workbench.adapters.rendering.jobs import RenderJobs
 from design_workbench.adapters.storage.sqlite import SqliteStore
 from design_workbench.application.contracts import Selector
+from design_workbench.application.design_contracts import (
+    CandidateSave,
+    DesignAction,
+    DesignCall,
+    DesignCreate,
+    DesignFinish,
+    DesignList,
+    DesignPropose,
+    DesignRef,
+    DesignResume,
+    DesignUpdate,
+    DesignUsage,
+)
 from design_workbench.application.scenes import fingerprint
 from design_workbench.application.tool_contracts import (
     CreateTool,
@@ -35,8 +48,47 @@ from design_workbench.application.tool_contracts import (
 from design_workbench.bootstrap import Workbench
 from design_workbench.domain.errors import WorkbenchError
 from design_workbench.domain.models import BlockState, Bounds
+from design_workbench.interfaces.designs import Designs
 
 TOOL_CONTRACTS: dict[str, tuple[type[BaseModel], str]] = {
+    "design.start": (
+        DesignCreate,
+        "Start a persistent externally driven design task with explicit budget. This does not launch a model. Existing buildings require user approval for every edit.",
+    ),
+    "design.list": (DesignList, "List persistent design tasks for a project."),
+    "design.status": (
+        DesignRef,
+        "Read stage, cumulative usage, remaining budget, pending proposal, candidates and recent events. Read again before continuing after a failure.",
+    ),
+    "design.update": (DesignUpdate, "Report the current design stage and progress message."),
+    "design.usage": (
+        DesignUsage,
+        "Report cumulative actual external model counters and their source. Cached inputs are already included in input_tokens. Never invent usage or cost.",
+    ),
+    "design.call": (
+        DesignCall,
+        "Call an existing tool within the persistent task budget. scene.commit_edit becomes a pending preview for user approval. Read-only tools and actual screenshots are supported. Cancelled/failed tasks refuse further operations.",
+    ),
+    "design.propose": (
+        DesignPropose,
+        "Preview and persist a proposed edit with an explanation. Only the user-facing approval endpoint can apply it; poll design.status for the decision.",
+    ),
+    "design.cancel": (
+        DesignAction,
+        "Cancel a task and stop owned screenshot jobs; applied edits and saved candidates are retained.",
+    ),
+    "design.resume": (
+        DesignResume,
+        "Explicitly resume a stopped task, optionally extending its budget. Consumed counters are never reset; re-read the current scene revision.",
+    ),
+    "design.finish": (
+        DesignFinish,
+        "Record success or failure. Success requires at least one saved independent candidate.",
+    ),
+    "candidate.save": (
+        CandidateSave,
+        "Save an immutable complete SQLite candidate at an expected revision, including full block states, NBT and history, independently of undo/redo.",
+    ),
     "catalog.search": (
         SearchTool,
         "Search versioned materials by Chinese/English name; bounded pagination.",
@@ -123,6 +175,14 @@ class Tools:
         self._renderer: RenderJobs | None = None
         self._lock = threading.RLock()
         self.isolated = isolated
+        self._designs: Designs | None = None
+
+    @property
+    def designs(self) -> Designs:
+        with self._lock:
+            if self._designs is None:
+                self._designs = Designs(self)
+            return self._designs
 
     @property
     def renderer(self) -> RenderJobs:
@@ -134,6 +194,8 @@ class Tools:
             return self._renderer
 
     def close(self) -> None:
+        if self._designs is not None:
+            self._designs.close()
         if self._renderer is not None:
             self._renderer.close()
 
@@ -160,8 +222,23 @@ class Tools:
             raise WorkbenchError(
                 "INVALID_REQUEST", item["msg"], ".".join(map(str, item["loc"]))
             ) from error
+        is_design = name.startswith("design.") or name == "candidate.save"
+        if not is_design and name in {
+            "scene.commit_edit",
+            "asset.import",
+            "history.undo",
+            "history.redo",
+        }:
+            runs = self.designs.store.list(str(arguments.get("project", "")))
+            if runs and runs[0]["status"] != "succeeded":
+                raise WorkbenchError(
+                    "DESIGN_TASK_REQUIRED",
+                    "此项目由设计任务管理，AI 修改请通过 design.call 或 design.propose；取消后必须明确继续任务。",
+                )
         value = (
-            self._bounded_call(name, arguments)
+            self._design_dispatch(name, request)
+            if is_design
+            else self._bounded_call(name, arguments)
             if self.isolated and not name.startswith("render.")
             else self._dispatch(name, request)
         )
@@ -178,6 +255,32 @@ class Tools:
         if len(json.dumps(value, ensure_ascii=False).encode()) > maximum:
             raise WorkbenchError("TOOL_OUTPUT_LIMIT", "工具响应超过预算，请缩小查询范围。")
         return value
+
+    def _design_dispatch(self, name: str, request: BaseModel) -> dict[str, Any]:
+        control = self.designs
+        if isinstance(request, DesignCreate):
+            return control.create(request)
+        if isinstance(request, DesignList):
+            return control.list(request.project)
+        if isinstance(request, DesignCall):
+            return control.call(request)
+        if isinstance(request, DesignUsage):
+            return control.usage(request)
+        if isinstance(request, DesignPropose):
+            return control.propose(request)
+        if isinstance(request, DesignUpdate):
+            return control.update(request)
+        if isinstance(request, DesignResume):
+            return control.resume(request)
+        if isinstance(request, DesignFinish):
+            return control.finish(request)
+        if isinstance(request, CandidateSave):
+            return control.candidate(request)
+        if name == "design.cancel" and isinstance(request, DesignAction):
+            return control.cancel(request)
+        if isinstance(request, DesignRef):
+            return control.status(request.run_id)
+        raise WorkbenchError("UNKNOWN_TOOL", "未知设计工具。")
 
     def _bounded_call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """A killed worker cannot keep running an edit after a timeout response."""

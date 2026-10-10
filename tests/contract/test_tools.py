@@ -75,7 +75,14 @@ def test_cli_http_mcp_share_requests_retries_and_conflicts(
                 initialized = await session.initialize()
                 assert initialized.serverInfo.version == "1.0.0"
                 tools = await session.list_tools()
-                assert len(tools.tools) == 15
+                assert {
+                    "scene.commit_edit",
+                    "render.views",
+                    "design.start",
+                    "design.propose",
+                    "candidate.save",
+                } <= {tool.name for tool in tools.tools}
+                assert "design.approve" not in {tool.name for tool in tools.tools}
                 assert all(
                     tool.inputSchema.get("additionalProperties") is False for tool in tools.tools
                 )

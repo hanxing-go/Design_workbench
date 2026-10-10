@@ -41,9 +41,17 @@ async def run_server(settings: Settings) -> None:
                         "scene.preview_edit",
                         "render.views",
                         "render.status",
+                        "design.list",
+                        "design.status",
                     },
                     destructiveHint=description["name"]
-                    in {"scene.commit_edit", "asset.import", "history.undo", "history.redo"},
+                    in {
+                        "scene.commit_edit",
+                        "asset.import",
+                        "history.undo",
+                        "history.redo",
+                        "design.call",
+                    },
                     openWorldHint=False,
                 ),
             )

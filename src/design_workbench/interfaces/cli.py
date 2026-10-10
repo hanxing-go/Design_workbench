@@ -279,8 +279,11 @@ def call_tool(
                     details.get("revision"),
                 ) from error
         else:
-            if name == "render.views":
-                if not body.get("request", {}).get("wait", True):
+            if name == "render.views" or (
+                name == "design.call" and body.get("tool") == "render.views"
+            ):
+                render_body = body if name == "render.views" else body.get("arguments", {})
+                if not render_body.get("request", {}).get("wait", True):
                     raise WorkbenchError(
                         "ASYNC_RENDER_REQUIRES_SERVER", "异步截图请使用 --server。", "request.wait"
                     )

@@ -23,6 +23,15 @@ from design_workbench.application.contracts import (
     RenameRequest,
     Selector,
 )
+from design_workbench.application.design_contracts import (
+    CandidateOpen,
+    CandidateSave,
+    DesignAction,
+    DesignCreate,
+    DesignDecision,
+    DesignFinish,
+    DesignResume,
+)
 from design_workbench.application.render_contracts import RenderRequest
 from design_workbench.bootstrap import Workbench
 from design_workbench.config import Settings
@@ -84,7 +93,13 @@ def create_app(settings: Settings) -> FastAPI:
             if error.code == "RENDER_QUEUE_FULL"
             else 409
             if error.code
-            in {"REVISION_CONFLICT", "EDIT_COLLISION", "REQUEST_ID_REUSED", "PROJECT_EXISTS"}
+            in {
+                "REVISION_CONFLICT",
+                "EDIT_COLLISION",
+                "REQUEST_ID_REUSED",
+                "PROJECT_EXISTS",
+                "DESIGN_BUSY",
+            }
             else 404
             if error.code
             in {
@@ -92,6 +107,8 @@ def create_app(settings: Settings) -> FastAPI:
                 "RENDER_NOT_FOUND",
                 "RENDER_IMAGE_NOT_FOUND",
                 "ASSET_NOT_FOUND",
+                "DESIGN_NOT_FOUND",
+                "CANDIDATE_NOT_FOUND",
             }
             else 422
         )
@@ -293,10 +310,94 @@ def create_app(settings: Settings) -> FastAPI:
     def image_links(result: dict[str, Any]) -> dict[str, Any]:
         if "images" in result:
             result["images"] = [
-                {**item, "url": f"/api/render-jobs/{result['task_id']}/images/{index}.png"}
+                {
+                    **item,
+                    "url": item.get(
+                        "url", f"/api/render-jobs/{result['task_id']}/images/{index}.png"
+                    ),
+                }
                 for index, item in enumerate(result["images"])
             ]
         return result
+
+    @app.get("/api/projects/{identifier}/design-runs")
+    def design_list(identifier: str) -> dict[str, Any]:
+        workbench.service(project_path(identifier)).summary()
+        return tools.designs.list(identifier)
+
+    @app.post("/api/projects/{identifier}/design-runs", status_code=201)
+    def design_create(identifier: str, request: DesignCreate) -> dict[str, Any]:
+        if identifier != request.project:
+            raise WorkbenchError("DESIGN_PROJECT_MISMATCH", "设计任务项目不匹配。")
+        return tools.designs.create(request)
+
+    @app.get("/api/design-runs/{run_id}")
+    def design_status(run_id: str) -> dict[str, Any]:
+        return tools.designs.status(run_id)
+
+    def check_run(run_id: str, body: DesignAction) -> None:
+        if body.run_id != run_id:
+            raise WorkbenchError("DESIGN_RUN_MISMATCH", "设计任务标识不匹配。")
+
+    @app.post("/api/design-runs/{run_id}/cancel")
+    def design_cancel(run_id: str, request: DesignAction) -> dict[str, Any]:
+        check_run(run_id, request)
+        return tools.designs.cancel(request)
+
+    @app.post("/api/design-runs/{run_id}/resume")
+    def design_resume(run_id: str, request: DesignResume) -> dict[str, Any]:
+        check_run(run_id, request)
+        return tools.designs.resume(request)
+
+    @app.post("/api/design-runs/{run_id}/finish")
+    def design_finish(run_id: str, request: DesignFinish) -> dict[str, Any]:
+        check_run(run_id, request)
+        return tools.designs.finish(request)
+
+    @app.post("/api/design-runs/{run_id}/decision")
+    def design_decision(run_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        # This user endpoint is deliberately absent from the AI tool catalog.
+        approve = body.pop("approve", None)
+        if not isinstance(approve, bool):
+            raise WorkbenchError("INVALID_REQUEST", "approve 必须是布尔值。")
+        try:
+            request = DesignDecision.model_validate(body)
+        except ValueError as error:
+            raise WorkbenchError("INVALID_REQUEST", "确认请求格式非法。") from error
+        check_run(run_id, request)
+        return tools.designs.decide(request, approve)
+
+    @app.post("/api/design-runs/{run_id}/candidates")
+    def candidate_save(run_id: str, request: CandidateSave) -> dict[str, Any]:
+        check_run(run_id, request)
+        return tools.designs.candidate(request)
+
+    @app.post("/api/design-runs/{run_id}/candidates/{candidate_id}/open")
+    def candidate_open(run_id: str, candidate_id: str, request: CandidateOpen) -> dict[str, Any]:
+        return tools.designs.open_candidate(run_id, candidate_id, request)
+
+    @app.get("/api/design-runs/{run_id}/candidates/{candidate_id}/download")
+    def candidate_download(run_id: str, candidate_id: str) -> FileResponse:
+        item = tools.designs.find_candidate(run_id, candidate_id)
+        return FileResponse(
+            tools.designs.store.candidate_path(candidate_id),
+            filename=f"{item['name']}.dwbench",
+            media_type="application/octet-stream",
+        )
+
+    @app.get("/api/design-runs/{run_id}/renders/{task_id}")
+    def design_render_status(run_id: str, task_id: str) -> dict[str, Any]:
+        return tools.designs.render_status(run_id, task_id)
+
+    @app.get("/api/design-runs/{run_id}/images/{task_id}/{index}.png")
+    def design_image(run_id: str, task_id: str, index: int) -> FileResponse:
+        run = tools.designs.status(run_id)
+        capture = next(
+            (item for item in run.get("screenshots", []) if item["task_id"] == task_id), None
+        )
+        if capture is None or index < 0 or index >= len(capture["images"]):
+            raise WorkbenchError("RENDER_IMAGE_NOT_FOUND", "任务图片不存在。")
+        return FileResponse(Path(capture["images"][index]["path"]), media_type="image/png")
 
     @app.post("/api/projects/{identifier}/views")
     def render_views(identifier: str, request: RenderRequest) -> dict[str, Any]:

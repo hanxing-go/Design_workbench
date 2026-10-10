@@ -6,7 +6,6 @@ from typing import Any
 
 from design_workbench.domain.editing import Editor, selected
 from design_workbench.domain.errors import WorkbenchError
-from design_workbench.domain.models import Scene
 
 from .contracts import EditRequest, HistoryRequest, RenameRequest, Selector
 from .ports import FormatAdapter, SceneRepository
@@ -155,9 +154,9 @@ class SceneService:
     ) -> tuple[bytes, dict[str, Any]]:
         if self.formats is None:
             raise WorkbenchError("FORMAT_UNAVAILABLE", "蓝图适配器未配置。")
-        scene: Scene = self.repository.load()
+        scene, source = self.repository.snapshot()
         if expected_revision != scene.revision:
             raise WorkbenchError(
                 "REVISION_CONFLICT", "导出前场景已被修改。", revision=scene.revision
             )
-        return self.formats.write(scene, self.repository.attachment(), allow_lossy)
+        return self.formats.write(scene, source, allow_lossy)

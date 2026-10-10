@@ -8,3 +8,12 @@ max_edit_cells = 500000
 max_selection_volume = 2000000
 max_operations = 256
 database_timeout = 10.0
+# P6 budgets; browser_channel is optional (default: managed Playwright Chromium).
+tool_timeout = 30.0
+max_tool_response_bytes = 2000000
+render_timeout = 60.0
+max_render_jobs = 16
+render_workers = 2
+max_render_cells = 100000
+max_render_bytes = 16000000
+# browser_channel = "chrome"

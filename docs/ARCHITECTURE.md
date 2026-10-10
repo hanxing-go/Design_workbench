@@ -1,6 +1,6 @@
 # 独立 Python 项目架构
 
-当前 Python 核心、CLI、HTTP、SQLite、资源解析、NBT 适配和 Three.js GUI 已实现；MCP、截图任务与模型驱动属于 P6/P7，尚未实现。阶段安排以 [实施路线](ROADMAP.md) 为准。
+当前 Python 核心、CLI、HTTP、SQLite、资源解析、NBT 适配和 Three.js GUI 已实现；P6 的共用工具门面、MCP 和实际截图任务也已实现并验收。平台内模型驱动属于尚未实现的 P7。阶段安排以 [实施路线](ROADMAP.md) 为准。
 
 ## 技术选择
 
@@ -16,7 +16,8 @@
 | 项目存储 | SQLite + 分块场景与编辑日志 | 事务、恢复、增量保存和历史 |
 | NBT | nbtlib；独立 litemapy 仅用于验收 | `.litematic` 读写，长整数与标签类型保留 |
 | 三维界面 | TypeScript + Three.js，轻量界面组件 | WebGL、拾取、选择、相机和实时编辑 |
-| AI 接入（未实现） | 独立 MCP 适配器及图像反馈 | P6 外部客户端，P7 自动模型驱动 |
+| AI 接入 | CLI/HTTP/MCP 共用工具门面；标准 stdio MCP 与 PNG ImageContent | P6 外部客户端已实现，P7 自动模型驱动待实现 |
+| 截图 | 独立工作进程 + Playwright，复用 GUI Viewer | 原子快照、多视角、预算、超时与取消 |
 
 Python 核心不意味着浏览器三维渲染也由 Python 执行。网页三维部分必须有浏览器端代码；它负责显示与交互，不保存另一套权威建筑数据。Node.js 可以用于前端构建，不应成为已打包 Python 平台的运行前提。
 
@@ -36,10 +37,13 @@ Design_workbench/
       storage/       SQLite、项目文件与迁移
       resources/     版本注册表、模型、贴图与语言资料
       formats/       Litematic/NBT 等格式
-      rendering/     增量场景渲染数据
+      rendering/     增量场景渲染数据、快照截图任务与工作进程
     interfaces/
       cli.py         终端命令
       http.py        浏览器 API
+      tools.py       CLI/HTTP/MCP 共用工具门面
+      tool_worker.py 有硬超时的普通工具进程
+      mcp.py         标准 stdio MCP
     data/            带来源的 1.20.1 注册表
     static/          构建后随 wheel 交付的前端
     config.py
@@ -56,7 +60,7 @@ Design_workbench/
   .github/workflows/
 ```
 
-按实际能力建模块，未创建空 MCP 或模型模块。用户项目/资源在忽略的 `.local/`，验收产物在 `artifacts/`。
+按实际能力建模块，MCP 与工具工作进程已实际实现，平台内模型模块待 P7。用户项目/资源在忽略的 `.local/`，验收产物在 `artifacts/`。
 
 ## 依赖规则
 
@@ -96,15 +100,15 @@ SQLite 保存项目元数据、分块内容、修订、编辑差异与历史。�
 
 前端按分块更新网格，采用遮挡面裁剪及可复用几何；透明块与特殊模型单独处理。准确性先于只渲染彩色方块的性能演示。
 
-当前浏览器验收脚本可生成实际 PNG，但还没有产品截图 API。P6 将实现固定修订的截图服务，返回 PNG、修订、相机和剖切信息；与 GUI 共用渲染器，管理浏览器依赖、超时、取消及失败结果。
+P6 的 `render.views` 与 HTTP 截图 API 返回实际 PNG、修订、相机、剖切和资源/快照哈希。SQLite 同一读事务固定场景和 NBT 来源，独立工作进程生成几何并使用 GUI Viewer；浏览器只读固定快照。队列、输入/输出、方块和像素预算有明确限制，超时/取消终止所拥有的进程树并清理失败 PNG。任务状态保存在当前服务进程，正常关闭清理临时文件。
 
 ## AI 工具契约
 
-拟提供 `catalog.search`、`scene.inspect`、`scene.preview_edit`、`scene.commit_edit`、`history.undo/redo`、`render.views`、`asset.import/export`。
+已提供 `catalog.search/material`、`project.list/create`、`scene.summary/inspect/preview_edit/commit_edit`、`history.undo/redo`、`render.views/status/cancel`、`asset.import/export`，共 15 个工具。
 
 工具只返回必要的摘要、差异、资源引用和图片，不每次输出全部方块。修改有预算、显式选区、修订校验和原子性；错误包含具体路径与原因。AI 在合法工具内自由组合建筑，不需要执行任意 Python 源码才能使用平台。
 
-接入 MCP 后，外部 AI 客户端即可使用工具；平台自行调用模型的自动设计循环属于后续模块。首版不绑定某个模型供应商。
+CLI 优先供终端 Agent 和脚本调用，MCP 只增加工具发现和原生图片传输；两者经同一门面进入应用服务。真实外部客户端已完成看图改稿和导出。平台自行调用模型的自动设计循环属于 P7，首版不绑定某个模型供应商。接入说明和 Blender 流程参考见 [P6 使用指南](P6_USAGE.md)。
 
 ## 独立扩展
 

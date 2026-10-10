@@ -202,17 +202,31 @@ function snapshot(): Packet | null {
 
 async function refresh(full = false) {
   if (!project) return;
+  const activeProject = project;
   const start = performance.now();
-  const packet = await api<Packet>(endpoint('/render'), full ? {} : viewer.versions);
+  type ObservedSummary = Summary & {
+    events: { revision: number; kind: string; changed: number }[];
+  };
+  let packet: Packet;
+  let observed: ObservedSummary;
+  let attempts = 0;
+  do {
+    packet = await api<Packet>(
+      `/api/projects/${activeProject}/render`,
+      full ? {} : viewer.versions,
+    );
+    observed = await api<ObservedSummary>(`/api/projects/${activeProject}`);
+    if (++attempts >= 3 && packet.revision !== observed.revision)
+      throw new Error('场景正在连续更新，请稍后重新读取');
+  } while (packet.revision !== observed.revision);
+  if (project !== activeProject) return;
   if (full) {
     viewer.clearScene();
   }
   viewer.update(packet);
   await viewer.whenReady();
   latest = packet;
-  summary = await api<Summary & { events: { revision: number; kind: string; changed: number }[] }>(
-    endpoint(),
-  );
+  summary = observed;
   renderSummary(summary);
   const events = (
     summary as Summary & { events: { revision: number; kind: string; changed: number }[] }
@@ -1011,3 +1025,29 @@ void safely(async () => {
   if (data.items[0]) await chooseMaterial(data.items[0]);
   message('工作台就绪 · 所有修改自动保存');
 });
+
+let polling = false;
+window.setInterval(() => {
+  if (polling || busy || document.hidden || !project || !summary || input('compare') === 'before')
+    return;
+  polling = true;
+  const activeProject = project;
+  void api<Summary>(`/api/projects/${activeProject}`)
+    .then(async (current) => {
+      if (busy || project !== activeProject || current.revision === summary?.revision) return;
+      await safely(async () => {
+        await refresh();
+        message(
+          previewBody
+            ? `已读取外部编辑 r${summary?.revision}；当前预演基于旧修订，请重新预演`
+            : `已读取外部编辑 r${summary?.revision}`,
+        );
+      });
+    })
+    .catch((error: unknown) => {
+      console.warn('读取外部修订失败', error);
+    })
+    .finally(() => {
+      polling = false;
+    });
+}, 1500);

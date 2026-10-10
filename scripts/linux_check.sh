@@ -9,9 +9,10 @@ verification_uv="$verification_dir/uv-x86_64-unknown-linux-gnu/uv"
 export UV_PROJECT_ENVIRONMENT="$verification_dir/environment"
 export UV_LINK_MODE=copy
 cd "$project_root"
-"$verification_uv" sync --locked --extra gui --python 3.12
-"$verification_uv" run --no-sync pytest -m 'not e2e and not resources' -q
+"$verification_uv" sync --locked --extra gui --extra ai --extra render --python 3.12
+"$verification_uv" run --no-sync pytest -m 'not e2e and not resources' -q --junitxml=artifacts/p6/pytest-linux.xml
 "$verification_uv" run --no-sync mypy
 "$verification_uv" run --no-sync ruff check .
+"$verification_uv" run --no-sync ruff format --check .
 "$verification_uv" build
-"$verification_uv" run --no-sync python scripts/install_smoke.py --report artifacts/install-smoke-linux.json
+"$verification_uv" run --no-sync python scripts/install_smoke.py --extras gui,ai,render --report artifacts/p6/install-smoke-linux.json

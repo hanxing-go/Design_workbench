@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsc --noEmit && prettier --check src index.html vite.config.js",
-    "format": "prettier --write src index.html vite.config.js",
+    "check": "tsc --noEmit && prettier --check src index.html capture.html vite.config.js",
+    "format": "prettier --write src index.html capture.html vite.config.js",
     "build": "vite build",
     "dev": "vite --host 127.0.0.1"
   },

@@ -6,7 +6,7 @@ import sqlite3
 import uuid
 import zlib
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -94,6 +94,7 @@ class SqliteStore:
         data_version: int,
         bounds: Bounds,
         timeout: float = 10.0,
+        creation: dict[str, Any] | None = None,
     ) -> "SqliteStore":
         path = path.resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -110,6 +111,10 @@ class SqliteStore:
                 "INSERT INTO meta(key,value) VALUES('scene',?)",
                 (json.dumps({**metadata(scene), "revision": 0, "cursor": 0}),),
             )
+            if creation is not None:
+                connection.execute(
+                    "INSERT INTO meta(key,value) VALUES('creation',?)", (json.dumps(creation),)
+                )
             connection.commit()
         return store
 
@@ -236,11 +241,22 @@ class SqliteStore:
             connection.rollback()
 
     def load(self) -> Scene:
+        return self.snapshot(include_source=False)[0]
+
+    def snapshot(self, include_source: bool = True) -> tuple[Scene, bytes | None]:
+        """Read cells and their NBT source in one SQLite read transaction."""
         with self.connection() as connection:
             connection.execute("BEGIN")
             data = self._meta(connection)
             cells = self._cells(connection)
             protected = {tuple(point) for point in data.get("protected", [])}
+            source = (
+                connection.execute(
+                    "SELECT payload FROM attachments WHERE key='litematic'"
+                ).fetchone()
+                if include_source
+                else None
+            )
             return Scene(
                 data["id"],
                 data["name"],
@@ -250,11 +266,32 @@ class SqliteStore:
                 Bounds(tuple(data["bounds"]["low"]), tuple(data["bounds"]["high"])),
                 cells,
                 protected,
-            )
+            ), bytes(source[0]) if source else None
+
+    def creation(self) -> dict[str, Any] | None:
+        with self.connection() as connection:
+            row = connection.execute("SELECT value FROM meta WHERE key='creation'").fetchone()
+            return json.loads(row[0]) if row else None
 
     def replay(self, request_id: str, fingerprint: str) -> dict[str, Any] | None:
         with self.connection() as connection:
             return self._replay(connection, request_id, fingerprint)
+
+    def receipt(
+        self, request_id: str, fingerprint: str, operation: Callable[[], dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Serialize an external asset publication and persist its retry result."""
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            result = self._replay(connection, request_id, fingerprint)
+            if result is not None:
+                return result
+            result = operation()
+            connection.execute(
+                "INSERT INTO requests VALUES(?,?,?)", (request_id, fingerprint, json.dumps(result))
+            )
+            connection.commit()
+            return result
 
     @staticmethod
     def _replay(

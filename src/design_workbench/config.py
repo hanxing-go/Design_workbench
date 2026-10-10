@@ -24,6 +24,14 @@ class Settings(BaseModel):
     max_selection_volume: int = Field(default=2_000_000, ge=1, le=16_000_000)
     max_operations: int = Field(default=256, ge=1, le=4096)
     database_timeout: float = Field(default=10.0, gt=0, le=60)
+    tool_timeout: float = Field(default=30.0, gt=0, le=120)
+    max_tool_response_bytes: int = Field(default=2_000_000, ge=4096, le=8_000_000)
+    render_timeout: float = Field(default=60.0, gt=0, le=120)
+    max_render_jobs: int = Field(default=16, ge=1, le=64)
+    render_workers: int = Field(default=2, ge=1, le=4)
+    max_render_cells: int = Field(default=100_000, ge=1, le=500_000)
+    max_render_bytes: int = Field(default=16_000_000, ge=1024, le=64_000_000)
+    browser_channel: str | None = None
 
     @classmethod
     def load(cls, config_file: Path | None = None, **overrides: Any) -> "Settings":

@@ -1,6 +1,6 @@
 # API 与数据契约
 
-当前应用版本 0.1.0；编辑请求 schema_version=1；项目 SQLite schema=2；资源清单 schema_version=1；蓝图 Version=6。它们不是同一个版本号。
+当前应用版本 0.1.0；编辑/工具请求 schema_version=1；MCP 工具服务版本 1.0.0；项目 SQLite schema=2；资源清单 schema_version=1；蓝图 Version=6。它们不是同一个版本号。
 
 ## 编辑请求
 
@@ -45,7 +45,7 @@ selector 可包含 bounds、name、group、region，多个条件取交集。屋�
 
 ## HTTP
 
-本地服务同时提供 `/docs` 和 `/openapi.json`；当前 HTTP 路径为 `/api/`，编辑体有独立 schema 版本。P6 将另提供版本化 MCP 工具。
+本地服务同时提供 `/docs` 和 `/openapi.json`；当前 HTTP 路径为 `/api/`，编辑体有独立 schema 版本。P6 已提供 CLI/HTTP/MCP 共用的版本化工具，完整格式见 [P6_USAGE](P6_USAGE.md)。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
@@ -63,12 +63,18 @@ selector 可包含 bounds、name、group、region，多个条件取交集。屋�
 | POST | /api/projects/{id}/export | expected_revision、allow_lossy；返回二进制蓝图和 X-Export-Report |
 | POST | /api/projects/{id}/render | 已知 chunk_versions；返回增量分块、模型和警告 |
 | GET | /api/projects/{id}/consistency | 规则问题与待预演建议 |
+| GET | /api/tools/v1 | 15 个工具及完整 JSON Schema |
+| POST | /api/tools/v1/{name} | 与 CLI/MCP 共用的工具请求 |
+| POST | /api/projects/{id}/views | 固定修订的实际多角度 PNG；wait=false 异步返回任务 |
+| GET | /api/render-jobs/{task_id} | 截图状态、进度与结果 |
+| POST | /api/render-jobs/{task_id}/cancel | 停止截图任务与自有进程树 |
+| GET | /api/render-jobs/{task_id}/images/{index}.png | 下载生成的 PNG |
 
 工作台默认监听 127.0.0.1，无远程鉴权或多人实时同步设计。CLI 可以使用任意项目文件路径；GUI 管理配置 data_dir 下的 projects 目录。
 
 ## 错误
 
-领域错误包含 code、message、location、revision；HTTP 增加 request_id 并返回同名响应头。修订冲突、碰撞、重复 ID 等返回 409，缺项目返回 404，其余已知校验错误返回 422。请求字段错误包含 details。
+领域错误包含 code、message、location、revision；HTTP 增加 request_id 并返回同名响应头。修订冲突、碰撞、重复 ID 等返回 409，缺项目/任务/图片/导入资产返回 404，截图队列满返回 429，普通工具硬超时返回 504，其余已知校验错误返回 422。请求字段错误包含 details。已接收的截图任务在结果中返回 failed/timed_out/cancelled 及具体错误。
 
 常见错误：INVALID_REQUEST、UNKNOWN_BLOCK、INVALID_STATE、OUT_OF_BOUNDS、EDIT_LIMIT、REVISION_CONFLICT、REQUEST_ID_REUSED、EDIT_COLLISION、PROTECTED_CONTENT、INCOMPLETE_MULTIBLOCK、VERSION_MISMATCH、REGION_OVERLAP、EXPORT_REGION_OVERLAP、MISSING_RESOURCE。
 
@@ -87,3 +93,5 @@ selector 可包含 bounds、name、group、region，多个条件取交集。屋�
 默认限制：250,000 个存储格；一次编辑触达 500,000 格、256 项操作；蓝图区域总体积 2,000,000 格；输入压缩文件 32 MB、解压 64 MB。它们是资源预算，不是交互流畅度承诺。
 
 默认新建工作区 X/Z=-512..511，Y=-64..511。GUI/HTTP 可在创建请求指定范围。data_dir、cache_dir、log_dir 分开配置，日志轮转 2 MB×4；没有后台模型任务或凭据配置。
+
+P6 默认普通工具硬超时 30 秒，输入 4 MB、JSON 响应 2 MB；截图 100,000 个存储格、6 视角、8M 像素、16 MB PNG、60 秒、2 个工作进程和 16 个任务。新增创建/导出回执保证同一 request_id 重试；导出保存原字节。MCP 的 PNG 使用 ImageContent，CLI 将 PNG 与 manifest 保存到 output-dir，HTTP 提供下载 URL。截图任务生命周期和配置见 [P6_USAGE](P6_USAGE.md)。

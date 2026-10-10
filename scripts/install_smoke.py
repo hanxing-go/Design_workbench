@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", default="artifacts/install-smoke-windows.json")
+    parser.add_argument("--extras", default="gui", help="Comma-separated wheel extras to install")
     args = parser.parse_args()
     wheel = max((ROOT / "dist").glob("*.whl"), key=lambda path: path.stat().st_mtime)
     with tempfile.TemporaryDirectory(prefix="dw-install-") as temporary:
@@ -35,7 +36,7 @@ def main() -> None:
             }
         )
         subprocess.run(
-            [str(binary), "-m", "pip", "install", f"{wheel}[gui]"],
+            [str(binary), "-m", "pip", "install", f"{wheel}[{args.extras}]"],
             check=True,
             env=env,
             cwd=directory,
@@ -93,6 +94,7 @@ from design_workbench.adapters.resources.catalog import Catalog
 from design_workbench.adapters.formats.litematic import Litematic
 root=Path(design_workbench.__file__).parent
 assert (root/'static/index.html').is_file()
+assert (root/'static/capture.html').is_file()
 assert list((root/'static/assets').glob('*.js'))
 assert len(Catalog().blocks)==1003
 scene,report=Litematic(Catalog()).read(Path('portable.litematic').read_bytes())
@@ -100,6 +102,26 @@ assert scene.summary()['blocks']==18
 print('Wheel frontend/catalog/create/edit/export verified')
 """
         subprocess.run([str(binary), "-c", validate], check=True, env=env, cwd=directory)
+        descriptions = subprocess.run(
+            [*command, "tools"], check=True, capture_output=True, text=True, env=env, cwd=directory
+        )
+        assert len(json.loads(descriptions.stdout)["tools"]) == 15
+        p6_check = False
+        if "ai" in args.extras.split(","):
+            protocol_check = """
+import asyncio, sys
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+async def check():
+    async with stdio_client(StdioServerParameters(command=sys.executable,args=['-m','design_workbench.interfaces.cli','mcp'])) as (read,write), ClientSession(read,write) as session:
+        await session.initialize()
+        assert len((await session.list_tools()).tools)==15
+        result=await session.call_tool('catalog.search',{'query':'oak','limit':1})
+        assert not result.isError and result.structuredContent['items']
+asyncio.run(check())
+"""
+            subprocess.run([str(binary), "-c", protocol_check], check=True, env=env, cwd=directory)
+            p6_check = True
         report = {
             "wheel": wheel.name,
             "isolated_install": True,
@@ -107,9 +129,13 @@ print('Wheel frontend/catalog/create/edit/export verified')
             "source_checkout_required": False,
             "create_edit_export": True,
             "frontend_and_registry_in_wheel": True,
+            "capture_frontend_and_tool_schemas_in_wheel": True,
+            "installed_extras": args.extras,
+            "mcp_stdio_in_clean_environment": p6_check,
         }
-        (ROOT / "artifacts").mkdir(exist_ok=True)
-        (ROOT / args.report).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        report_path = ROOT / args.report
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(json.dumps(report))
 
 

@@ -23,11 +23,13 @@ from design_workbench.application.contracts import (
     RenameRequest,
     Selector,
 )
+from design_workbench.application.render_contracts import RenderRequest
 from design_workbench.bootstrap import Workbench
 from design_workbench.config import Settings
 from design_workbench.domain.errors import WorkbenchError
 from design_workbench.domain.models import Bounds
 from design_workbench.domain.validation import inspect_consistency
+from design_workbench.interfaces.tools import Tools
 
 LOGGER = logging.getLogger("design_workbench.http")
 
@@ -35,6 +37,7 @@ LOGGER = logging.getLogger("design_workbench.http")
 def create_app(settings: Settings) -> FastAPI:
     workbench = Workbench(settings)
     render_cache = RenderCache()
+    tools = Tools(workbench)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -42,10 +45,12 @@ def create_app(settings: Settings) -> FastAPI:
             yield
         finally:
             render_cache.close()
+            tools.close()
 
     app = FastAPI(title="Design Workbench", version="0.1.0", lifespan=lifespan)
     app.state.workbench = workbench
     app.state.render_cache = render_cache
+    app.state.tools = tools
     projects = settings.data_dir / "projects"
     projects.mkdir(parents=True, exist_ok=True)
 
@@ -73,11 +78,21 @@ def create_app(settings: Settings) -> FastAPI:
     @app.exception_handler(WorkbenchError)
     async def workbench_error(request: Request, error: WorkbenchError) -> JSONResponse:
         status = (
-            409
+            504
+            if error.code == "TOOL_TIMEOUT"
+            else 429
+            if error.code == "RENDER_QUEUE_FULL"
+            else 409
             if error.code
             in {"REVISION_CONFLICT", "EDIT_COLLISION", "REQUEST_ID_REUSED", "PROJECT_EXISTS"}
             else 404
-            if error.code == "PROJECT_NOT_FOUND"
+            if error.code
+            in {
+                "PROJECT_NOT_FOUND",
+                "RENDER_NOT_FOUND",
+                "RENDER_IMAGE_NOT_FOUND",
+                "ASSET_NOT_FOUND",
+            }
             else 422
         )
         return JSONResponse(
@@ -248,6 +263,42 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/api/projects/{identifier}/consistency")
     def consistency(identifier: str) -> dict[str, object]:
         return inspect_consistency(workbench.service(project_path(identifier)).repository.load())
+
+    @app.get("/api/tools/v1")
+    def tool_descriptions() -> dict[str, Any]:
+        return {"schema_version": 1, "tools": tools.descriptions()}
+
+    @app.post("/api/tools/v1/{name}")
+    def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return image_links(tools.call(name, arguments))
+
+    def image_links(result: dict[str, Any]) -> dict[str, Any]:
+        if "images" in result:
+            result["images"] = [
+                {**item, "url": f"/api/render-jobs/{result['task_id']}/images/{index}.png"}
+                for index, item in enumerate(result["images"])
+            ]
+        return result
+
+    @app.post("/api/projects/{identifier}/views")
+    def render_views(identifier: str, request: RenderRequest) -> dict[str, Any]:
+        return image_links(tools.renderer.submit(project_path(identifier), request))
+
+    @app.get("/api/render-jobs/{task_id}")
+    def render_status(task_id: str) -> dict[str, Any]:
+        return image_links(tools.call("render.status", {"task_id": task_id}))
+
+    @app.post("/api/render-jobs/{task_id}/cancel")
+    def render_cancel(task_id: str) -> dict[str, Any]:
+        return tools.call("render.cancel", {"task_id": task_id})
+
+    @app.get("/api/render-jobs/{task_id}/images/{index}.png")
+    def render_image(task_id: str, index: int) -> FileResponse:
+        return FileResponse(
+            tools.renderer.image(task_id, index),
+            media_type="image/png",
+            headers={"Cache-Control": "no-store"},
+        )
 
     static = Path(__file__).parents[1] / "static"
     if static.is_dir():

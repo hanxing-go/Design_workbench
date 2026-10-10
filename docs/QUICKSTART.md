@@ -1,6 +1,6 @@
 # 快速开始
 
-当前交付版本 0.1.0，P1–P5，Minecraft Java 1.20.1。
+当前应用版本 0.1.0，Minecraft Java 1.20.1。P1–P5 工作台与 P6 外部 AI 工具已实现，阶段验收状态见 [实施路线](ROADMAP.md)。
 
 ## 当前机器
 
@@ -17,7 +17,7 @@ cd D:\Study\program\Design_workbench
 
 ## GUI 操作
 
-1. 点击“新建”并输入名称，或选择已有项目。“导入蓝图”读入版本一致的 `.litematic`。
+1. 首页点击“开始建造”并输入名称，或从“我的设计”打开已有项目。首页“导入蓝图”会新建独立项目后读入 `.litematic`；“先搭一间小屋”会创建可自由编辑的木屋。进入工作台后，也可以在顶栏新建或切换项目；左上角房屋图标可返回首页。
 2. 左侧查询材料，点击卡片并选择属性，例如楼梯的 facing 和 half。
 3. 可用“生成简单木屋”起稿。也可在右侧设置整数选区，再选择填充、挤出等工具。
 4. “预览修改”显示绿色新增/替换、红色删除；“应用修改”提交，所有成功修改自动保存。“取消预览”不改项目。
@@ -25,7 +25,9 @@ cd D:\Study\program\Design_workbench
 6. 撤销/重做产生新修订。“保存 / 重读”重新读取已保存结果。“上次修改前”比较本次浏览器会话中的最近快照；刷新页面不保留这张比较快照，数据库历史仍保留。
 7. “检查部件与连接”给出建议；先预览建议再应用。“导出蓝图”下载当前修订。
 
-导入会替换当前项目场景，作为可撤销事务记录。建议为新资产先建项目。特殊实体关联格只能查看和保留，相关编辑返回明确限制。
+工作台内导入会替换当前项目场景，作为可撤销事务记录；首页导入始终使用独立新项目。特殊实体关联格只能查看和保留，相关编辑返回明确限制。
+
+首页浮空小岛支持拖动和方向键旋转、暂停、重播方块组装动画；离开可见区域或切换到后台时停止动画，遵循系统减少动态效果设置。没有 WebGL 时显示静态草方块。直接访问 `/?project=项目标识` 可打开指定设计，`/?view=workbench` 保留原工作台入口。
 
 ### 第一人称沉浸编辑
 
@@ -82,6 +84,18 @@ uv run design-workbench summary .local/data/example.dwbench --config config.exam
 ```
 
 编辑文件按 [API 契约](API_AND_DATA.md) 保存后交给 `design-workbench edit 项目路径 请求文件 --preview --config config.example.toml`。去掉 `--preview` 即提交；使用最新修订和独立 request_id。
+
+## 外部 AI 接入
+
+P6 采用 CLI 优先：`design-workbench tools --config config.example.toml` 输出工具 Schema，`design-workbench tool scene.summary summary.json --config config.example.toml` 按项目 ID 调用共用工具。截图返回实际 PNG，需要 `--output-dir` 保存并由 Agent 读图；兼容客户端也可直接使用 stdio MCP 的图片内容。
+
+```powershell
+uv sync --locked --extra gui --extra ai --extra render
+uv run python -m playwright install chromium
+uv run design-workbench mcp --config config.example.toml
+```
+
+已有 Chrome 时也可在 TOML 设置 `browser_channel = "chrome"`，或使用 `DW_BROWSER_CHANNEL=chrome`。查询/编辑不需要启动浏览器。完整 JSON、工具列表、截图任务与预算见 [P6 使用指南](P6_USAGE.md)，实际外部 AI 流程见 [验收记录](P6_ACCEPTANCE.md)。平台内自主模型调用尚未实现。
 
 ## 开发检查
 

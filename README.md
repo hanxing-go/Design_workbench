@@ -2,7 +2,7 @@
 
 独立的 Minecraft 建筑设计工作台。Python 保存权威场景并执行编辑、历史、资源和蓝图读写；TypeScript/Three.js 提供实际方块的三维界面。
 
-**P1–P5 已完成，交付点 A：人可使用的设计工作台。** 当前支持 Minecraft Java **1.20.1 / DataVersion 3465**。MCP 与自主 AI 设计分别属于后续 P6、P7，目前未实现。
+**P1–P6 已完成，交付点 A/B 达成。** 当前支持 Minecraft Java **1.20.1 / DataVersion 3465**。CLI、HTTP、MCP 共用工具服务，外部 AI 已实际完成查询、建造、看图、改稿与导出；平台内自主模型调度属于尚未实现的 P7。
 
 公开仓库：<https://github.com/hanxing-go/Design_workbench>。`v0.1.0` 保存 P1–P5 的交付版本，开发与版本管理约定见 [贡献指南](CONTRIBUTING.md)。
 
@@ -27,6 +27,7 @@ cd D:\Study\program\Design_workbench
 - 阵列、二维轮廓挤出、圆弧、双坡屋顶与窗组；生成的结果仍能逐格编辑。
 - 预演修改差异再应用；原子提交、自动保存、撤销/重做、重开和修订冲突检查。
 - 检查常见门床部件和连接状态，预览建议后应用；导出蓝图供外部工具使用。
+- 外部 AI 通过 CLI 或 MCP 查询材料、批量编辑、查看固定修订的多视角/剖切 PNG 并改稿；网页同步刷新外部编辑，修订冲突与重试有统一处理。
 
 已在真实 Chrome 中完成木屋完整设计流程、36,094 格教堂导入与局部编辑、全部高级表单操作。导出用独立的 litemapy 逐格核对完整状态与坐标，教堂的 67 个方块实体保留。
 
@@ -45,6 +46,8 @@ uv run design-workbench serve --config config.example.toml
 ```
 
 游戏模型和贴图从官方客户端单独导入，不包含在 wheel 中。已有客户端可使用 `resources setup --jar ... --language ...`，详见 [快速开始](docs/QUICKSTART.md)。
+
+AI 工具采用 CLI 优先的接入方式：`uv run design-workbench tools` 查看 Schema，`uv run design-workbench tool 工具名 请求.json --config config.example.toml` 调用工具。MCP 和截图需另安装 `ai`、`render` extras，并安装 Chromium 或配置已有 Chrome。完整命令、实际 PNG 和浏览器依赖见 [P6 使用指南](docs/P6_USAGE.md)。
 
 构建与验证：
 
@@ -91,6 +94,8 @@ uv run python scripts/install_smoke.py
 | [API 和数据契约](docs/API_AND_DATA.md) | 操作格式、修订、幂等、配置和恢复 |
 | [资源与兼容范围](docs/RESOURCES_AND_LIMITS.md) | 来源、版本、静态预览和 NBT 限制 |
 | [P5 验收记录](docs/P5_ACCEPTANCE.md) | 27 项任务到实现和真实验证的映射 |
+| [P6 使用指南](docs/P6_USAGE.md) | CLI 优先、MCP/HTTP 接入、截图任务与预算 |
+| [P6 验收记录](docs/P6_ACCEPTANCE.md) | 实际外部 AI 看图改稿、协议/浏览器与安装验证 |
 | [范围与验收](docs/SCOPE.md) | 全项目边界和后续验收要求 |
 
 ## 当前边界

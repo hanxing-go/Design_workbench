@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { WalkControls } from './walkControls';
 import { mergedChunk, triangleOwner, type GeometryPart } from './chunkGeometry';
 import { addSignText, disposeChunk } from './signText';
 import { Transparency, type TextPart } from './transparency';
@@ -13,6 +14,8 @@ export class Viewer {
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(40, 1, 0.1, 4000);
   controls: OrbitControls;
+  walk: WalkControls;
+  walkReach = 5;
   ray = new THREE.Raycaster();
   chunks = new Map<string, RenderCell[]>();
   models = new Map<string, Model>();
@@ -78,18 +81,29 @@ export class Viewer {
     this.camera.position.set(20, 17, 24);
     this.controls.target.set(0, 3, 0);
     this.controls.update();
+    this.walk = new WalkControls(this.camera, this.controls, this.renderer.domElement, () =>
+      this.requestDraw(),
+    );
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     let down: { x: number; y: number } | null = null;
     this.renderer.domElement.addEventListener('pointerdown', (e) => {
+      if (this.walk.active) {
+        down = null;
+        if (!this.walk.locked) void this.walk.lock();
+        else if (e.button === 0 || e.button === 2) this.onHit(this.pickCenter(), e);
+        return;
+      }
       if (e.button === 0) down = { x: e.clientX, y: e.clientY };
     });
     this.renderer.domElement.addEventListener('pointerup', (e) => {
+      if (this.walk.active) return;
       if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) {
         this.onHit(this.pick(e), e);
       }
       down = null;
     });
+    this.renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
     this.resize();
   }
 
@@ -506,6 +520,7 @@ export class Viewer {
     this.requestDraw();
   }
   fit(bounds: { low: Point; high: Point }) {
+    if (this.walk.active) return;
     const low = new THREE.Vector3(...bounds.low),
       high = new THREE.Vector3(...bounds.high).addScalar(1);
     const center = low.clone().add(high).multiplyScalar(0.5);
@@ -522,6 +537,7 @@ export class Viewer {
     this.requestDraw();
   }
   view(direction: 'front' | 'side' | 'top' | 'iso') {
+    if (this.walk.active) return;
     const target = this.controls.target.clone(),
       distance = this.camera.position.distanceTo(target);
     const vector =
@@ -595,15 +611,24 @@ export class Viewer {
   }
 
   pick(event: PointerEvent): Hit | null {
-    if (this.building) return null;
     const rect = this.renderer.domElement.getBoundingClientRect();
-    this.ray.setFromCamera(
+    return this.pickRay(
       new THREE.Vector2(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         (-(event.clientY - rect.top) / rect.height) * 2 + 1,
       ),
-      this.camera,
     );
+  }
+
+  pickCenter(): Hit | null {
+    return this.pickRay(new THREE.Vector2(0, 0), this.walkReach);
+  }
+
+  private pickRay(screen: THREE.Vector2, distance = Infinity): Hit | null {
+    if (this.building) return null;
+    this.camera.updateMatrixWorld();
+    this.ray.far = distance;
+    this.ray.setFromCamera(screen, this.camera);
     const objects = [...this.meshes.values()]
       .filter((group) => group.visible)
       .flatMap((group) => group.children);
@@ -637,7 +662,7 @@ export class Viewer {
       new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
       new THREE.Vector3(),
     );
-    return point
+    return point && point.distanceTo(this.ray.ray.origin) <= distance
       ? {
           position: [Math.floor(point.x), -1, Math.floor(point.z)],
           normal: [0, 1, 0],
@@ -655,10 +680,11 @@ export class Viewer {
     if (!this.thumbnailRenderer) {
       this.thumbnailRenderer = new THREE.WebGLRenderer({
         antialias: true,
+        alpha: true,
         preserveDrawingBuffer: true,
       });
       this.thumbnailRenderer.setPixelRatio(1);
-      this.thumbnailRenderer.setClearColor('#eef2f2');
+      this.thumbnailRenderer.setClearColor(0x000000, 0);
       this.thumbnailRenderer.outputColorSpace = THREE.SRGBColorSpace;
     }
     const renderer = this.thumbnailRenderer;

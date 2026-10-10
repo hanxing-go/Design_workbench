@@ -441,6 +441,114 @@ button[aria-expanded='false'] {
 #stage canvas {
   display: block;
 }
+#walk-toggle[aria-pressed='true'] {
+  background: #485e34;
+  color: #d1edaf;
+}
+#walk-reach-control {
+  margin: 0;
+  white-space: nowrap;
+}
+#walk-reach {
+  width: 58px;
+  margin: 0;
+  padding: 5px;
+}
+#walk-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font: 26px monospace;
+  text-shadow:
+    0 1px 3px #000,
+    0 -1px 3px #000;
+  pointer-events: none;
+  z-index: 3;
+}
+#walk-hud {
+  position: absolute;
+  inset: 0;
+  color: #e4eadd;
+  font-size: 11px;
+  line-height: 1.7;
+  text-shadow: 1px 1px 3px #000;
+  pointer-events: none;
+  z-index: 2;
+}
+#walk-status {
+  position: absolute;
+  top: 22px;
+  right: 24px;
+  padding: 7px 12px;
+  background: #18201bb8;
+  border: 1px solid #74846955;
+}
+#walk-feedback {
+  position: absolute;
+  top: 110px;
+  left: 24px;
+  max-width: min(420px, calc(100% - 48px));
+  padding: 8px 12px;
+  background: #1c251ddd;
+  border-left: 2px solid var(--green);
+}
+#walk-feedback.error {
+  background: #35211fe8;
+  border-color: #e88c78;
+}
+.walk-bottom {
+  position: absolute;
+  bottom: 20px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+.walk-bottom p {
+  margin: 0;
+  color: #c8d1c3;
+}
+.walk-material {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 180px;
+  max-width: min(440px, 100%);
+  padding: 8px 18px 8px 10px;
+  background: #1b211deb;
+  border: 2px solid #a5c486;
+  box-shadow: 0 3px 12px #0005;
+}
+.walk-material img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.walk-material > div {
+  min-width: 0;
+}
+.walk-material small,
+.walk-material strong,
+.walk-material span {
+  display: block;
+}
+.walk-material small {
+  color: #b3c6a4;
+  font-size: 10px;
+}
+.walk-material strong {
+  font-size: 14px;
+}
+.walk-material span {
+  overflow-wrap: anywhere;
+  color: #aebca4;
+  font-size: 10px;
+}
 .stage-label {
   position: absolute;
   top: 22px;
@@ -1006,6 +1114,190 @@ kbd {
   }
   .shortcut-grid > :nth-child(even) {
     margin-bottom: 8px;
+  }
+}
+#app.first-person-mode {
+  min-height: 0;
+  overflow: hidden;
+}
+.first-person-mode > header,
+.first-person-mode > footer,
+.first-person-mode .workspace > .toolbar {
+  display: none;
+}
+.first-person-mode #workbench-layout {
+  display: block;
+}
+.first-person-mode .workspace,
+.first-person-mode #stage {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.first-person-mode #stage:focus-visible {
+  box-shadow: none;
+}
+.first-person-mode .stage-label::before {
+  content: '第一人称 / EDIT';
+}
+.first-person-mode .stage-label {
+  max-width: calc(100% - 320px);
+}
+.walk-menu-open .stage-label {
+  max-width: calc(100% - 430px);
+}
+.walk-menu-open .walk-bottom {
+  right: 408px;
+}
+#walk-menu {
+  position: fixed;
+  z-index: 6;
+  top: 16px;
+  bottom: 16px;
+  right: 16px;
+  width: min(376px, calc(100% - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: #232925f5;
+  border: 1px solid #66775a;
+  box-shadow: 0 8px 32px #0006;
+}
+.walk-menu-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.walk-menu-heading strong {
+  font-size: 13px;
+  color: #c9dabb;
+}
+#walk-menu button {
+  padding: 8px 10px;
+  font-size: 11px;
+}
+#walk-resume {
+  min-height: 38px;
+}
+.walk-menu-tabs,
+#walk-menu-actions,
+#walk-menu-settings {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.walk-menu-tabs button,
+#walk-menu-actions button {
+  flex: 1;
+}
+.walk-menu-tabs button[aria-pressed='true'] {
+  background: #485e34;
+  color: #d1edaf;
+  box-shadow: inset 0 -2px #a5cb79;
+}
+#walk-menu-settings {
+  justify-content: space-between;
+}
+#walk-menu-settings select {
+  width: 126px;
+  padding: 6px;
+  font-size: 11px;
+}
+#walk-panel-host {
+  flex: 1;
+  min-height: 0;
+}
+#walk-panel-host > aside {
+  position: static;
+  width: 100%;
+  height: 100%;
+  padding: 12px 4px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  box-shadow: none;
+}
+#walk-panel-host .panel-title {
+  margin-bottom: 12px;
+}
+#walk-menu-layers .slice-bar {
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 0;
+  background: transparent;
+}
+#walk-menu-layers .slice-bar #layer {
+  min-width: 75px;
+}
+#walk-menu-layers .workspace-meta {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 0 0;
+  background: transparent;
+}
+#walk-menu-layers #selection-hint {
+  display: block;
+}
+#walk-menu-notices:empty {
+  display: none;
+}
+#walk-menu-notices .warnings {
+  padding: 6px;
+  max-height: 52px;
+}
+@media (max-width: 780px) {
+  .walk-menu-open .stage-label,
+  .walk-menu-open .walk-bottom {
+    display: none;
+  }
+  .first-person-mode .stage-label {
+    top: 16px;
+    left: 16px;
+    max-width: calc(100% - 48px);
+  }
+  #walk-status {
+    top: 94px;
+    left: 16px;
+    right: auto;
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+  #walk-feedback {
+    top: 135px;
+    left: 16px;
+  }
+  .walk-bottom {
+    font-size: 10px;
+  }
+}
+@media (max-height: 650px) {
+  #walk-menu {
+    overflow-y: auto;
+    gap: 8px;
+    padding: 12px;
+  }
+  .walk-menu-heading {
+    position: sticky;
+    top: -12px;
+    z-index: 1;
+    padding: 8px 0;
+    background: #232925;
+  }
+  #walk-panel-host {
+    flex: none;
+    min-height: 180px;
+  }
+  #walk-panel-host > aside {
+    height: auto;
+    overflow: visible;
+  }
+  #walk-resume,
+  #walk-menu-actions,
+  #walk-menu-settings {
+    flex-shrink: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {

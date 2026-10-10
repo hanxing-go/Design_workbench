@@ -71,6 +71,21 @@
       </div>
       <button id="undo" title="Ctrl+Z">撤销</button
       ><button id="redo" title="Ctrl+Shift+Z">重做</button><button id="save">保存 / 重读</button>
+      <button id="walk-toggle" aria-pressed="false" title="第一人称 / 退出第一人称（G）">
+        第一人称
+      </button>
+      <label id="walk-reach-control" hidden
+        >命中距离
+        <input
+          id="walk-reach"
+          type="number"
+          min="0.1"
+          step="0.1"
+          value="5"
+          aria-label="第一人称命中距离"
+        />
+        格</label
+      >
       <div class="spacer"></div>
       <select id="compare" aria-label="版本对比">
         <option value="current">当前设计</option>
@@ -93,14 +108,30 @@
         <strong id="scene-name">创建你的建筑</strong
         ><span id="scene-meta">拖动旋转 · 右键平移 · 滚轮缩放</span>
       </div>
-      <div class="camera-bar">
+      <div id="walk-crosshair" hidden aria-hidden="true">+</div>
+      <div id="walk-hud" hidden>
+        <span id="walk-status">Esc 材料与工具 · G 退出第一人称</span>
+        <output id="walk-feedback" hidden role="status"></output>
+        <div class="walk-bottom">
+          <p class="walk-movement">WASD 移动 · Space 上升 · Shift 下降 · Ctrl 加速</p>
+          <div class="walk-material">
+            <img id="walk-material-image" alt="" hidden />
+            <div>
+              <small>右键放置</small><strong id="walk-material-name">橡木木板</strong
+              ><span id="walk-material-properties"></span>
+            </div>
+          </div>
+          <p class="walk-edit-hint">左键删除 · Alt+左键选择或扩选</p>
+        </div>
+      </div>
+      <div id="camera-bar" class="camera-bar">
         <button data-view="iso">等距</button><button data-view="front">正面</button
         ><button data-view="side">侧面</button><button data-view="top">顶视</button
         ><button id="fit">适配</button>
       </div>
       <div id="empty-message">新建项目，或导入已有 .litematic 建筑</div>
     </div>
-    <div class="slice-bar" aria-label="逐层播放控制">
+    <div id="slice-controls" class="slice-bar" aria-label="逐层播放控制">
       <button
         id="layer-play"
         class="primary"
@@ -126,7 +157,7 @@
       >
       <button id="layer-reset" title="停止播放并显示全部层">全部</button>
     </div>
-    <div class="workspace-meta">
+    <div id="workspace-details" class="workspace-meta">
       <output id="layer-label">暂无方块</output>
       <span id="selection-hint">点击选中；Shift+点击扩展选区</span>
     </div>
@@ -194,6 +225,24 @@
   </aside>
 </main>
 <footer><span id="status" role="status">正在连接本地工作台…</span><span id="stats"></span></footer>
+<section id="walk-menu" hidden aria-label="第一人称编辑菜单">
+  <div class="walk-menu-heading">
+    <strong>第一人称 · 编辑</strong>
+    <div id="walk-menu-exit"></div>
+  </div>
+  <button id="walk-resume" class="primary">继续编辑</button>
+  <div class="walk-menu-tabs" role="group" aria-label="编辑面板">
+    <button data-walk-panel="library" aria-controls="library" aria-pressed="true">方块材料</button>
+    <button data-walk-panel="inspector" aria-controls="inspector" aria-pressed="false">
+      设计工具
+    </button>
+  </div>
+  <div id="walk-menu-actions"></div>
+  <div id="walk-menu-settings"></div>
+  <div id="walk-panel-host"></div>
+  <div id="walk-menu-layers"></div>
+  <div id="walk-menu-notices"></div>
+</section>
 <dialog id="rename-dialog" aria-labelledby="rename-title">
   <form id="rename-form">
     <div class="dialog-heading">
@@ -247,7 +296,10 @@
     ><span><kbd>←</kbd> <kbd>→</kbd></span> <span>隐藏材料 / 工具面板</span
     ><span><kbd>[</kbd> <kbd>]</kbd></span> <span>进入 / 退出专注视图</span><kbd>Tab</kbd>
     <span>适配建筑到画布</span><kbd>F</kbd> <span>打开本教程</span><kbd>?</kbd>
-    <span>暂停播放 / 取消预览 / 关闭弹窗</span><kbd>Esc</kbd>
+    <span>进入 / 退出第一人称</span><kbd>G</kbd> <span>第一人称：移动 / 升降 / 加速</span
+    ><span>WASD / Space、Shift / Ctrl</span> <span>第一人称：删除 / 放置 / 选择扩选</span
+    ><span>左键 / 右键 / Alt+左键</span> <span>第一人称：打开材料与工具，保留预览</span
+    ><kbd>Esc</kbd> <span>暂停播放 / 取消预览 / 关闭弹窗</span><kbd>Esc</kbd>
   </div>
   <p class="muted">
     在输入框、下拉框或弹窗中，保留正常输入与键盘操作。Mac 可用 ⌘ 代替 Ctrl。Tab

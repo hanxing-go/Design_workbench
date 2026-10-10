@@ -3,6 +3,7 @@ import shell from './shell.html?raw';
 import type { Material, Model, Packet, Point, Selection, State, Summary } from './types';
 import { Viewer } from './viewer';
 import { LayerPlayer } from './layerPlayer';
+import { typing } from './walkControls';
 
 const root = document.querySelector<HTMLDivElement>('#app')!;
 root.innerHTML = shell;
@@ -12,9 +13,16 @@ const input = (id: string) => el<HTMLInputElement>(id).value;
 const setInput = (id: string, value: string) => {
   el<HTMLInputElement>(id).value = value;
 };
+let feedbackTimer = 0;
 function message(text: string, error = false) {
   el('status').textContent = text;
   el('status').classList.toggle('error', error);
+  const feedback = el('walk-feedback');
+  feedback.textContent = text;
+  feedback.classList.toggle('error', error);
+  feedback.hidden = false;
+  clearTimeout(feedbackTimer);
+  feedbackTimer = window.setTimeout(() => (feedback.hidden = true), error ? 8000 : 3500);
 }
 async function api<T>(path: string, body?: unknown, method?: string): Promise<T> {
   const response = await fetch(path, {
@@ -76,10 +84,101 @@ function select(bounds: Selection | null) {
   if (bounds) {
     setInput('low', bounds.low.join(','));
     setInput('high', bounds.high.join(','));
-    el('selection-hint').textContent = `选区 ${bounds.low.join(',')} → ${bounds.high.join(',')}`;
   }
+  selectionHint();
   setInput('group-filter', '');
 }
+function selectionHint() {
+  const gesture = viewer.walk.active
+    ? 'Alt+点击选择或扩展选区；Shift 下降'
+    : '点击选中；Shift+点击扩展选区';
+  el('selection-hint').textContent = selection
+    ? `选区 ${selection.low.join(',')} → ${selection.high.join(',')} · ${gesture}`
+    : gesture;
+}
+
+let walkPanel: 'library' | 'inspector' = 'library';
+const immersiveSlots = new Map<HTMLElement, Comment>();
+function mountImmersive(active: boolean) {
+  if (active && !immersiveSlots.size) {
+    // Reuse the editor controls and their handlers; restore their exact positions on exit.
+    const destinations: Record<string, string[]> = {
+      'walk-menu-exit': ['walk-toggle'],
+      'walk-menu-actions': ['undo', 'redo', 'save'],
+      'walk-menu-settings': ['walk-reach-control', 'compare'],
+      'walk-panel-host': ['library', 'inspector'],
+      'walk-menu-layers': ['slice-controls', 'workspace-details'],
+      'walk-menu-notices': ['warnings'],
+    };
+    for (const [destination, ids] of Object.entries(destinations)) {
+      for (const id of ids) {
+        const element = el(id);
+        const slot = document.createComment(id);
+        element.before(slot);
+        immersiveSlots.set(element, slot);
+        el(destination).append(element);
+      }
+    }
+  } else if (!active) {
+    for (const [element, slot] of immersiveSlots) slot.replaceWith(element);
+    immersiveSlots.clear();
+  }
+}
+viewer.walk.onChange = () => {
+  const active = viewer.walk.active,
+    locked = viewer.walk.locked,
+    wasLocked = root.classList.contains('pointer-locked'),
+    wasActive = root.classList.contains('first-person-mode');
+  mountImmersive(active);
+  root.classList.toggle('first-person-mode', active);
+  root.classList.toggle('pointer-locked', active && locked);
+  root.classList.toggle('walk-menu-open', active && !locked);
+  el('walk-toggle').textContent = active ? '退出第一人称' : '第一人称';
+  el('walk-toggle').setAttribute('aria-pressed', String(active));
+  el('walk-crosshair').hidden = !active || !locked;
+  el('walk-hud').hidden = !active;
+  el('walk-menu').hidden = !active || locked;
+  el('walk-status').hidden = !locked;
+  el('walk-reach-control').hidden = !active;
+  el('camera-bar').hidden = active;
+  document
+    .querySelectorAll<HTMLButtonElement>('[data-tool]')
+    .forEach((button) => (button.disabled = active));
+  selectionHint();
+  renderPanels();
+  if (active && wasLocked && !locked) el('walk-resume').focus();
+  else if (!active && wasActive) el('walk-toggle').focus();
+};
+viewer.walk.onError = (text) => message(text, true);
+el('walk-toggle').onclick = () => {
+  if (viewer.walk.active) viewer.walk.exit();
+  else if (summary) {
+    layerPlayer.stop();
+    viewer.walk.enter(summary.occupied_bounds ? summary.occupied_bounds.low[1] + 1 : 0);
+  }
+};
+el('walk-resume').onclick = () => void viewer.walk.lock();
+try {
+  const reach = Number(localStorage.getItem('workbench.walkReach'));
+  if (Number.isFinite(reach) && reach > 0) viewer.walkReach = reach;
+} catch {
+  /* Browser settings are optional. */
+}
+setInput('walk-reach', String(viewer.walkReach));
+el<HTMLInputElement>('walk-reach').onchange = () => {
+  const reach = el<HTMLInputElement>('walk-reach').valueAsNumber;
+  if (!Number.isFinite(reach) || reach <= 0) {
+    setInput('walk-reach', String(viewer.walkReach));
+    message('命中距离需要大于零。', true);
+    return;
+  }
+  viewer.walkReach = reach;
+  try {
+    localStorage.setItem('workbench.walkReach', String(reach));
+  } catch {
+    /* Optional. */
+  }
+};
 function clearPreview() {
   previewBody = null;
   viewer.clearGhosts();
@@ -156,7 +255,8 @@ function renderSummary(value: Summary) {
       button.onclick = () => {
         setInput('group-filter', name);
         viewer.showSelection(null);
-        el('selection-hint').textContent = `分组：${name}`;
+        el('selection-hint').textContent =
+          `分组：${name}${viewer.walk.active ? ' · Alt+点击扩展选区；Shift 下降' : ''}`;
       };
       return button;
     }),
@@ -165,6 +265,7 @@ function renderSummary(value: Summary) {
 }
 
 async function loadProjects(preferred?: string) {
+  viewer.walk.exit();
   const data = await api<{ items: (Summary & { project_id: string })[] }>('/api/projects');
   const projectsSelect = el<HTMLSelectElement>('projects');
   projectsSelect.replaceChildren(
@@ -250,6 +351,7 @@ async function chooseMaterial(item: Material) {
       select.value = currentState.properties[name];
       select.onchange = () => {
         currentState.properties[name] = select.value;
+        void updateMaterialHud().catch((error) => message(String(error), true));
       };
       label.append(select);
       return label;
@@ -258,7 +360,34 @@ async function chooseMaterial(item: Material) {
   el('materials')
     .querySelectorAll<HTMLElement>('.material-card')
     .forEach((card) => card.classList.toggle('chosen', card.dataset.name === item.name));
+  await updateMaterialHud();
   message(`已选择 ${item.chinese_name}`);
+}
+let materialHudRequest = 0;
+async function updateMaterialHud() {
+  const request = ++materialHudRequest;
+  el('walk-material-name').textContent = material?.chinese_name ?? currentState.name;
+  const propertyLabels: Record<string, Record<string, string>> = {
+    facing: { north: '朝北', south: '朝南', west: '朝西', east: '朝东', up: '朝上', down: '朝下' },
+    axis: { x: '沿 X 轴', y: '沿 Y 轴', z: '沿 Z 轴' },
+    half: { top: '上半部', bottom: '下半部', upper: '上半部', lower: '下半部' },
+    waterlogged: { true: '含水', false: '不含水' },
+  };
+  el('walk-material-properties').textContent = Object.entries(currentState.properties)
+    .filter(([name, value]) => value !== material?.default_state.properties[name])
+    .map(([name, value]) => propertyLabels[name]?.[value] ?? `${name}：${value}`)
+    .join(' · ');
+  const image = el<HTMLImageElement>('walk-material-image');
+  image.hidden = true;
+  if (material?.support.status !== 'static') return;
+  const query = new URLSearchParams({ properties: JSON.stringify(currentState.properties) });
+  const model = await api<Model & { atlas: Packet['atlas'] }>(
+    `/api/material/${currentState.name.split(':')[1]}?${query}`,
+  );
+  if (request !== materialHudRequest) return;
+  viewer.atlas = model.atlas;
+  image.src = viewer.thumbnail(model, 72);
+  image.hidden = false;
 }
 
 function fields() {
@@ -410,9 +539,16 @@ viewer.onHit = (hit, event) =>
   void safely(async () => {
     if (!hit || !summary) return;
     if (input('compare') === 'before') throw new Error('先切回当前设计');
-    if (tool === 'select') {
+    const action = viewer.walk.active
+      ? event.button === 2
+        ? 'place'
+        : event.altKey
+          ? 'select'
+          : 'erase'
+      : tool;
+    if (action === 'select') {
       const position = hit.ground ? ([hit.position[0], 0, hit.position[2]] as Point) : hit.position;
-      if (event.shiftKey && selection) {
+      if ((viewer.walk.active ? event.altKey : event.shiftKey) && selection) {
         select({
           low: selection.low.map((v, i) => Math.min(v, position[i])) as Point,
           high: selection.high.map((v, i) => Math.max(v, position[i])) as Point,
@@ -421,8 +557,11 @@ viewer.onHit = (hit, event) =>
       message(
         hit.protected ? '此格包含保留的实体内容；当前只能查看' : `选中 ${position.join(',')}`,
       );
-    } else if (tool === 'place') {
+    } else if (action === 'place') {
       const target = hit.position.map((v, i) => v + hit.normal[i]) as Point;
+      if (viewer.walk.active && viewer.occupied().has(target.join(','))) {
+        throw new Error('放置目标已有方块，请先删除或选择空格');
+      }
       await commit([
         {
           op: 'set',
@@ -443,6 +582,7 @@ function bind(id: string, action: () => Promise<void>) {
 const renameDialog = el<HTMLDialogElement>('rename-dialog');
 el('rename-project').onclick = () => {
   if (busy || !summary) return;
+  if (viewer.walk.locked) document.exitPointerLock();
   layerPlayer.stop();
   setInput('project-name', summary.name);
   el<HTMLInputElement>('project-name').setCustomValidity('');
@@ -489,6 +629,7 @@ el<HTMLFormElement>('rename-form').onsubmit = (event) => {
   });
 };
 el('help').onclick = () => {
+  if (viewer.walk.locked) document.exitPointerLock();
   layerPlayer.stop();
   el<HTMLDialogElement>('help-dialog').showModal();
 };
@@ -512,13 +653,19 @@ let panels = savedPanels();
 let panelsBeforeFocus: Panels | null = null;
 function renderPanels() {
   for (const side of ['library', 'inspector'] as const) {
-    el(side).hidden = !panels[side];
+    const visible = viewer.walk.active ? !viewer.walk.locked && walkPanel === side : panels[side];
+    el(side).hidden = !visible;
     el('workbench-layout').classList.toggle(`${side}-hidden`, !panels[side]);
     el(`toggle-${side}`).setAttribute('aria-expanded', String(panels[side]));
   }
   const focused = !panels.library && !panels.inspector;
   el('focus-mode').setAttribute('aria-pressed', String(focused));
   el('focus-mode').textContent = focused ? '退出专注' : '专注';
+  document.querySelectorAll<HTMLButtonElement>('[data-walk-panel]').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.walkPanel === walkPanel));
+  });
+  el('walk-menu-layers').hidden = walkPanel !== 'inspector';
+  if (viewer.walk.active) return;
   try {
     localStorage.setItem('workbench.panels', JSON.stringify(panels));
   } catch {
@@ -527,12 +674,25 @@ function renderPanels() {
 }
 for (const side of ['library', 'inspector'] as const) {
   el(`toggle-${side}`).onclick = () => {
+    if (viewer.walk.active) {
+      walkPanel = side;
+      if (viewer.walk.locked) document.exitPointerLock();
+      renderPanels();
+      return;
+    }
     panelsBeforeFocus = null;
     panels[side] = !panels[side];
     renderPanels();
   };
 }
+document.querySelectorAll<HTMLButtonElement>('[data-walk-panel]').forEach((button) => {
+  button.onclick = () => {
+    walkPanel = button.dataset.walkPanel as typeof walkPanel;
+    renderPanels();
+  };
+});
 el('focus-mode').onclick = () => {
+  if (viewer.walk.active) return;
   if (!panels.library && !panels.inspector) {
     panels = panelsBeforeFocus ?? { library: true, inspector: true };
     panelsBeforeFocus = null;
@@ -755,14 +915,16 @@ bind('cabin', async () => {
 document.addEventListener('keydown', (event) => {
   const target = event.target instanceof HTMLElement ? event.target : null;
   if (
+    event.defaultPrevented ||
     event.isComposing ||
     event.repeat ||
     event.altKey ||
     document.querySelector('dialog[open]') ||
-    target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+    typing(target)
   )
     return;
   const key = event.key.toLowerCase();
+  if (viewer.walk.active && [' ', 'shift', 'control'].includes(key)) return;
   if (target?.closest('button') && [' ', 'arrowleft', 'arrowright'].includes(key)) return;
   if (event.ctrlKey || event.metaKey) {
     const action =
@@ -788,6 +950,7 @@ document.addEventListener('keydown', (event) => {
     '[': () => el('toggle-library').click(),
     ']': () => el('toggle-inspector').click(),
     f: () => el('fit').click(),
+    g: () => el('walk-toggle').click(),
     f2: () => el('rename-project').click(),
     '?': () => el('help').click(),
     escape: () => {

@@ -77,7 +77,8 @@ uv run python scripts/install_smoke.py
 | --- | --- |
 | [项目目标](docs/GOALS.md) | 总目标、优先级与交付点 A/B/C |
 | [实施路线](docs/ROADMAP.md) | P0–P8 分阶段任务及完成条件 |
-| [扩展计划](docs/PLANNED_EXTENSIONS.md) | 尚未实现的行走精修和网格体素化 |
+| [扩展计划](docs/PLANNED_EXTENSIONS.md) | 已实现的行走精修和待实现的网格体素化 |
+| [E1 验收](docs/E1_ACCEPTANCE.md) | 行走操作、真实 Chrome 编辑与持久化证据 |
 | [当前能力](docs/CURRENT_CAPABILITIES.md) | 已实现内容和后续缺口 |
 | [快速开始](docs/QUICKSTART.md) | 本机启动、全新安装、GUI 流程及验证 |
 | [架构](docs/ARCHITECTURE.md) | Python 领域/应用/适配器/接口与前端边界 |
@@ -100,6 +101,6 @@ uv run python scripts/install_smoke.py
 
 Windows 已验证真实浏览器工作流；Linux 已在 WSL Ubuntu 中验证核心检查及干净环境安装。[首次 GitHub Actions](https://github.com/hanxing-go/Design_workbench/actions/runs/37935155062) 的 Windows/Linux 核心与安装、Linux 官方资源与真实浏览器任务全部通过。
 
-第一人称行走精修，以及把 OBJ/glTF 转成方块，已写入 [扩展计划](docs/PLANNED_EXTENSIONS.md)，当前版本还没有这两项。
+第一人称沉浸编辑已实现：点击“第一人称”或按 G，建筑铺满窗口，使用准星在室内放置、删除和选择方块；Esc 打开材料与工具菜单，“退出第一人称”恢复原视图与面板布局。操作与验证见 [E1 验收](docs/E1_ACCEPTANCE.md)。把 OBJ/glTF 转成方块的 E2 仍未开始，规则见 [扩展计划](docs/PLANNED_EXTENSIONS.md)。
 
 源码采用 MIT 许可；Minecraft 素材和第三方建筑不受本项目 MIT 许可覆盖。用户项目、游戏资源、日志、导出及本地验收产物留在 `.local/` 和 `artifacts/`，不提交到源码仓库。

@@ -4,6 +4,7 @@ import type { Material, Model, Packet, Point, Selection, State, Summary } from '
 import { Viewer } from './viewer';
 import { LayerPlayer } from './layerPlayer';
 import { typing } from './walkControls';
+import { DesignPanel } from './designPanel';
 
 const root = document.querySelector<HTMLDivElement>('#app')!;
 root.innerHTML = shell;
@@ -60,6 +61,22 @@ const setBusy = (value: boolean) => {
   layerPlayer.setBusy(value);
 };
 const endpoint = (suffix = '') => `/api/projects/${project}${suffix}`;
+const designPanel = new DesignPanel({
+  project: () => project,
+  summary: () => summary,
+  refresh: async () => {
+    clearPreview();
+    await refresh();
+  },
+  preview: (changes) => {
+    clearPreview();
+    if (changes) viewer.showGhosts(changes);
+  },
+  openProject: async (id) => {
+    await loadProjects(id);
+  },
+  notice: message,
+});
 
 function point(value: string): Point {
   const values = value.split(',').map((v) => Number(v.trim()));
@@ -304,6 +321,7 @@ async function loadProjects(preferred?: string) {
   clearPreview();
   await refresh(true);
   history.replaceState({}, '', `?project=${project}`);
+  await designPanel.load();
   try {
     const stored: unknown = JSON.parse(localStorage.getItem('workbench.recentProjects') ?? '{}');
     const recents = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};

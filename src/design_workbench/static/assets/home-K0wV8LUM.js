@@ -1,5 +1,5 @@
 const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/homeScene-DflaHt-9.js","assets/three.module-BKyUEcGm.js"])))=>i.map(i=>d[i]);
-import{_ as L}from"./main-ewLqu-CZ.js";/* empty css              */import{h as b}from"./homeIcons-CSC-BSB0.js";import"./modulepreload-polyfill-B5Qt9EMX.js";const N=`<div class="home-topline" aria-hidden="true"></div>
+import{_ as L}from"./main-CyDfTYc9.js";/* empty css              */import{h as b}from"./homeIcons-CSC-BSB0.js";import"./modulepreload-polyfill-B5Qt9EMX.js";const N=`<div class="home-topline" aria-hidden="true"></div>
 <header class="home-header">
   <a class="brand home-brand" href="/" aria-label="Design Workbench 首页">
     <span class="brand-mark" data-icon="grass" aria-hidden="true"></span>

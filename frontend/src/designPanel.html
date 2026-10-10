@@ -1,0 +1,130 @@
+<aside id="ai-panel" class="ai-panel" aria-label="AI 设计任务" hidden>
+  <div class="ai-heading">
+    <h2>AI 设计任务</h2>
+    <button id="ai-close" aria-label="关闭 AI 任务面板">×</button>
+  </div>
+  <p class="muted">
+    由你正在使用的 AI 执行。创建任务后，将任务编号交给它，即可在这里查看进度、确认改稿和保留结果。
+  </p>
+  <div class="ai-toolbar">
+    <select id="ai-runs" aria-label="选择设计任务"></select
+    ><button id="ai-new">新任务</button>
+  </div>
+  <form id="ai-create-form">
+    <label
+      >设计需求<textarea
+        id="ai-prompt"
+        required
+        maxlength="16000"
+        placeholder="描述想建造的建筑，以及尺寸、材料和必须保留的部分"
+      ></textarea>
+    </label>
+    <label
+      >模型名称（可选）<input id="ai-model" maxlength="256" placeholder="用于记录本次使用的模型"
+    /></label>
+    <fieldset id="ai-budget">
+      <legend>任务预算</legend>
+      <div class="ai-budget-grid">
+        <label
+          >工具次数<input
+            id="ai-budget-calls"
+            type="number"
+            min="1"
+            max="4096"
+            value="256"
+            required
+        /></label>
+        <label
+          >模型调用<input
+            id="ai-budget-model-calls"
+            type="number"
+            min="1"
+            max="4096"
+            value="64"
+            required
+        /></label>
+        <label
+          >时长（分钟）<input
+            id="ai-budget-minutes"
+            type="number"
+            min="1"
+            max="1440"
+            value="30"
+            required
+        /></label>
+        <label
+          >Tokens<input id="ai-budget-tokens" type="number" min="1" value="3000000" required
+        /></label>
+        <label
+          >修改批次<input
+            id="ai-budget-revisions"
+            type="number"
+            min="1"
+            max="1024"
+            value="64"
+            required
+        /></label>
+        <label
+          >费用上限（USD，可选）<input
+            id="ai-budget-cost"
+            type="number"
+            min="0.0001"
+            step="any"
+            placeholder="不设费用上限"
+        /></label>
+      </div>
+    </fieldset>
+    <label class="ai-checkbox"
+      ><input id="ai-auto-build" type="checkbox" />空项目允许自动生成初稿，后续改稿仍需确认</label
+    >
+    <button id="ai-create" class="primary" type="submit">创建任务</button>
+  </form>
+  <section id="ai-detail" hidden>
+    <h3 id="ai-run-title"></h3>
+    <label>任务编号<input id="ai-run-id" readonly aria-label="AI 任务编号" /></label>
+    <p id="ai-state" role="status" aria-live="polite"></p>
+    <p id="ai-progress"></p>
+    <div id="ai-usage" class="ai-usage"></div>
+    <p id="ai-usage-source" class="muted"></p>
+    <div class="ai-actions">
+      <button id="ai-cancel">取消任务</button><button id="ai-resume" hidden>继续任务</button
+      ><button id="ai-extend" hidden>调整预算并继续</button
+      ><button id="ai-finish" hidden>标记完成</button>
+    </div>
+    <form id="ai-extend-form" hidden>
+      <p>已消耗的用量会保留。增加预算后，AI 需要读取当前场景再继续。</p>
+      <div id="ai-extend-fields"></div>
+      <button type="submit" class="primary">保存预算并继续</button>
+    </form>
+    <section id="ai-proposal" class="ai-proposal" hidden>
+      <h3>待确认的改稿</h3>
+      <p id="ai-proposal-message"></p>
+      <p id="ai-proposal-count"></p>
+      <div class="ai-actions">
+        <button id="ai-view-proposal">在画布查看</button
+        ><button id="ai-approve" class="primary">确认并应用</button
+        ><button id="ai-reject">拒绝修改</button>
+      </div>
+    </section>
+    <h3>候选稿</h3>
+    <form id="ai-candidate-form">
+      <label
+        >候选稿名称<input
+          id="ai-candidate-name"
+          required
+          maxlength="128"
+          placeholder="例如：初稿、调整树冠后" /></label
+      ><label
+        >评价与后续要求<textarea
+          id="ai-candidate-feedback"
+          maxlength="4000"
+          placeholder="保留这稿的原因，或下一步想改什么"
+        ></textarea></label
+      ><button id="ai-save-candidate" type="submit">保存当前工程为候选稿</button>
+    </form>
+    <div id="ai-candidates"></div>
+    <h3>运行记录</h3>
+    <ol id="ai-events" class="ai-events"></ol>
+  </section>
+  <p id="ai-error" role="alert" class="error"></p>
+</aside>

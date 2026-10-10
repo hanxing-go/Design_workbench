@@ -1,0 +1,125 @@
+.ai-panel {
+  position: fixed;
+  z-index: 45;
+  top: 70px;
+  right: 12px;
+  bottom: 45px;
+  width: min(460px, calc(100vw - 24px));
+  overflow: auto;
+  padding: 18px;
+  background: #222720;
+  border: 2px solid #6d8050;
+  box-shadow: -8px 8px 0 #10150dd9;
+}
+.ai-heading,
+.ai-toolbar,
+.ai-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ai-heading {
+  justify-content: space-between;
+}
+.ai-heading h2 {
+  margin: 0;
+}
+.ai-toolbar select {
+  flex: 1;
+  min-width: 160px;
+}
+.ai-panel label {
+  display: block;
+  margin: 10px 0;
+  font-size: 12px;
+}
+.ai-panel input:not([type='checkbox']),
+.ai-panel textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
+.ai-panel textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+.ai-panel fieldset {
+  margin: 14px 0;
+  border: 1px solid #59634e;
+}
+.ai-budget-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 10px;
+}
+.ai-checkbox {
+  display: flex !important;
+  gap: 8px;
+  align-items: center;
+}
+.ai-usage {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.ai-proposal {
+  margin: 16px 0;
+  padding: 10px;
+  border: 1px solid #a2ba71;
+  background: #35422c;
+}
+.ai-candidate {
+  padding: 10px 0;
+  border-bottom: 1px solid #46523c;
+}
+.ai-candidate p {
+  white-space: pre-wrap;
+  font-size: 12px;
+  color: #bbc5ac;
+}
+.ai-candidate a {
+  display: inline-block;
+  margin: 8px;
+  color: #acc08f;
+}
+.ai-candidate-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ai-candidate-images a {
+  margin: 0;
+}
+.ai-candidate-images img {
+  width: 110px;
+  height: 90px;
+  object-fit: contain;
+  background: #151a13;
+  border: 1px solid #64744d;
+}
+.ai-events {
+  padding-left: 18px;
+  font-size: 12px;
+  color: #bac6a9;
+}
+.ai-events li {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+#ai-run-title,
+#ai-progress,
+#ai-proposal-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.first-person-mode .ai-panel {
+  top: 12px;
+  bottom: 12px;
+}
+@media (max-width: 720px) {
+  .ai-panel {
+    top: 8px;
+    bottom: 8px;
+  }
+}

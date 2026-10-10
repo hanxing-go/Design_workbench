@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Page, Route, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "artifacts/e1"
@@ -353,22 +353,33 @@ def test_walk_cabin_edits_history_reopen_and_conflict(
     page.locator("#group-tree button").filter(has_text="floor").click()
     assert page.locator("#group-filter").input_value() == "floor"
 
-    # A new writer wins; the stale walking click must return 409 and keep its scene.
-    response = client.post(
-        path + "/edit",
-        json={
-            "expected_revision": edit_revision,
-            "request_id": "other-writer",
-            "operations": [
-                {"op": "set", "blocks": [{"position": [20, 0, 0], "state": {"name": "stone"}}]}
-            ],
-        },
-    )
-    assert response.is_success
-    conflict_scene = cells(client, path)
+    # Commit the competing writer after the browser constructs its edit request.
+    # Otherwise external-change polling can legitimately refresh the browser first.
+    conflict_scene: dict[str, tuple[str, dict[str, str], str, bool]] = {}
+
+    def competing_writer(route: Route) -> None:
+        assert route.request.post_data_json["expected_revision"] == edit_revision
+        response = client.post(
+            path + "/edit",
+            json={
+                "expected_revision": edit_revision,
+                "request_id": "other-writer",
+                "operations": [
+                    {"op": "set", "blocks": [{"position": [20, 0, 0], "state": {"name": "stone"}}]}
+                ],
+            },
+        )
+        assert response.is_success
+        conflict_scene.update(cells(client, path))
+        route.continue_()
+
     lock(page)
     pose(page, inside, [p + 0.5 for p in placed])
-    conflict = click_edit(page, "left", 409)
+    page.route("**" + path + "/edit", competing_writer)
+    try:
+        conflict = click_edit(page, "left", 409)
+    finally:
+        page.unroute("**" + path + "/edit", competing_writer)
     assert conflict["error"]["code"] == "REVISION_CONFLICT"
     assert cells(client, path) == conflict_scene
     page.keyboard.press("g")

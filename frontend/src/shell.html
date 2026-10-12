@@ -42,7 +42,20 @@
       <h3 id="material-name">选择材料</h3>
       <code id="material-id"></code>
       <div id="material-support"></div>
+      <label><input id="auto-snap" type="checkbox" checked /> 自动吸附（放置时按支撑面定向）</label>
+      <p class="muted">关闭后使用下面的手动属性；吸附不会改写这些设置。</p>
       <div id="properties"></div>
+      <h3>画</h3>
+      <select id="painting-variant" aria-label="画的图案"></select>
+      <label
+        >手动朝向<select id="painting-facing" aria-label="画的手动朝向">
+          <option value="north">北</option>
+          <option value="south">南</option>
+          <option value="east">东</option>
+          <option value="west">西</option>
+        </select></label
+      >
+      <button id="choose-painting">选择画</button>
     </div>
   </aside>
   <section class="workspace">

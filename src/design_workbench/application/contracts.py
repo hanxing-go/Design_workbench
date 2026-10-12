@@ -1,6 +1,6 @@
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, StrictInt, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, StrictInt, StringConstraints, model_validator
 
 type Position = tuple[StrictInt, StrictInt, StrictInt]
 
@@ -47,6 +47,40 @@ class Place(Contract):
     facing: Literal["north", "east", "south", "west"]
     group: str = Field(default="main", min_length=1, max_length=128)
     automatic: bool = True
+
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_attachment_request(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "support" in value:
+            from design_workbench.domain.placement import FACES, OPPOSITE, snap_state
+            from design_workbench.domain.models import BlockState
+            value = dict(value)
+            face = value.pop("face", None)
+            if face not in FACES:
+                raise ValueError("Invalid attachment face")
+            state = value["state"]
+            snapped = snap_state(BlockState.make(state["name"], state.get("properties", {})), face, value.get("heading", "north"), value.get("hit_height", 0.5))
+            value["state"] = {"name": snapped.name, "properties": dict(snapped.properties)}
+            value["hit"] = value.pop("support")
+            value["normal"] = FACES[face]
+            value["location"] = (0.5, value.pop("hit_height", 0.5), 0.5)
+            value["facing"] = OPPOSITE.get(value.pop("heading", "north"), "south")
+            value["automatic"] = False
+            value.pop("ground", None)
+        return value
+
+
+class PlacePainting(Contract):
+    op: Literal["painting"]
+    support: Position
+    face: Literal["north", "south", "east", "west"]
+    variant: str = Field(default="auto", min_length=1, max_length=128)
+
+
+class DeletePainting(Contract):
+    op: Literal["delete_painting"]
+    id: str = Field(min_length=1, max_length=128)
 
 
 class Fill(Contract):
@@ -137,6 +171,8 @@ class Window(Contract):
 type Operation = Annotated[
     Place
     | SetBlocks
+    | PlacePainting
+    | DeletePainting
     | Fill
     | Delete
     | Replace

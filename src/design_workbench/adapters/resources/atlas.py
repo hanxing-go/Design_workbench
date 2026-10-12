@@ -35,6 +35,7 @@ def build_atlas(directory: Path) -> dict[str, Any]:
                 "*/textures/entity/conduit/base.png",
                 "*/textures/entity/decorated_pot/decorated_pot_base.png",
                 "*/textures/entity/decorated_pot/decorated_pot_side.png",
+                "*/textures/painting/*.png",
             )
             for p in assets.glob(pattern)
         }

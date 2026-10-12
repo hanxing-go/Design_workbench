@@ -246,6 +246,17 @@ def create_app(settings: Settings) -> FastAPI:
         geometry = workbench.pack.geometry(state)
         return {**geometry, **state.as_dict(), "atlas": workbench.pack.atlas}
 
+    @app.get("/api/paintings")
+    def paintings() -> dict[str, Any]:
+        from design_workbench.domain.paintings import VARIANTS
+
+        return {
+            "items": [
+                {"name": name, "width": size[0], "height": size[1]}
+                for name, size in VARIANTS.items()
+            ]
+        }
+
     @app.get("/api/atlas.png")
     def atlas(project: str | None = None, minecraft_version: str | None = None) -> FileResponse:
         workbench = context(project, minecraft_version)

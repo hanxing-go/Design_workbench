@@ -77,6 +77,37 @@ class Catalog:
             properties[key] = value
         return BlockState.make(name, properties)
 
+    def supports_attachment(self, state: BlockState) -> bool:
+        block = self.blocks[state.name]
+        name = state.name.split(":", 1)[1]
+        if block.get("boundingBox") != "block":
+            return False
+        # Conservative offline support: never infer a sturdy face on partial models.
+        if name.endswith(
+            (
+                "_stairs",
+                "_slab",
+                "_fence",
+                "_wall",
+                "_door",
+                "_trapdoor",
+                "_pane",
+                "_bed",
+                "_sign",
+                "chest",
+                "anvil",
+                "hopper",
+                "campfire",
+                "cauldron",
+            )
+        ):
+            return False
+        return (
+            not block.get("transparent", False)
+            or name in {"glass", "ice", "packed_ice", "blue_ice"}
+            or name.endswith("_stained_glass")
+        )
+
     def default(self, name: str) -> BlockState:
         return self.normalize(BlockState.make(name))
 

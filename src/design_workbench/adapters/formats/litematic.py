@@ -12,6 +12,8 @@ import nbtlib
 from design_workbench.domain.editing import Registry
 from design_workbench.domain.errors import WorkbenchError
 from design_workbench.domain.models import BlockState, Bounds, Cell, Point, Scene
+from design_workbench.domain.paintings import VARIANTS, Painting
+from design_workbench.domain.placement import FACES
 
 REGION_KEYS = {
     "Position",
@@ -181,6 +183,25 @@ class Litematic:
                     protected.add(point3(bounds.low[i] + position[i] for i in range(3)))
                     block_entities += 1
                 for entry in region.get("Entities", []):
+                    if (
+                        str(entry.get("id", "")) == "minecraft:painting"
+                        and str(entry.get("variant", "")).removeprefix("minecraft:") in VARIANTS
+                        and all("Tile" + axis in entry for axis in "XYZ")
+                    ):
+                        facing = ("south", "west", "north", "east")[int(entry.get("facing", 0)) % 4]
+                        anchor = point3(
+                            bounds.low[i] + int(entry["Tile" + axis])
+                            for i, axis in enumerate("XYZ")
+                        )
+                        painting = Painting(
+                            "imported",
+                            anchor,
+                            facing,
+                            str(entry["variant"]).removeprefix("minecraft:"),
+                        )
+                        for p in painting.positions():
+                            protected.add(p)
+                            protected.add(point3(p[i] - FACES[facing][i] for i in range(3)))
                     if "Pos" in entry:
                         protected.add(
                             point3(
@@ -282,13 +303,20 @@ class Litematic:
                 additions[point] = cell
             else:
                 assigned[target][point] = cell
-        if additions or not boxes:
+        painting_additions = {
+            p
+            for painting in scene.paintings
+            for p in painting.positions()
+            if not any(box.contains(p) for box in boxes.values())
+        }
+        addition_points = set(additions) | painting_additions
+        if addition_points or not boxes:
             box = (
                 Bounds(
-                    point3(min(p[i] for p in additions) for i in range(3)),
-                    point3(max(p[i] for p in additions) for i in range(3)),
+                    point3(min(p[i] for p in addition_points) for i in range(3)),
+                    point3(max(p[i] for p in addition_points) for i in range(3)),
                 )
-                if additions
+                if addition_points
                 else Bounds((0, 0, 0), (0, 0, 0))
             )
             if any(overlap(box, previous) for previous in boxes.values()):
@@ -349,6 +377,16 @@ class Litematic:
                 )
                 indices[index] = lookup[state]
             region["BlockStates"] = pack_states(indices, len(palette))
+        for painting in scene.paintings:
+            painting_region = next(
+                (name for name, box in boxes.items() if box.contains(painting.anchor)), None
+            )
+            if painting_region is None:
+                raise WorkbenchError("EXPORT_PAINTING", "画没有可导出的区域。")
+            region = regions[painting_region]
+            region.setdefault("Entities", nbtlib.List[nbtlib.Compound]()).append(
+                painting_tag(painting, boxes[painting_region].low)
+            )
         meta = root["Metadata"]
         meta["Name"] = nbtlib.String(scene.name)
         meta["TimeModified"] = nbtlib.Long(int(time.time() * 1000))
@@ -372,6 +410,7 @@ class Litematic:
             "revision": scene.revision,
             "regions": len(boxes),
             "blocks": int(meta["TotalBlocks"]),
+            "paintings": len(scene.paintings),
             "volume": total_volume,
             "losses": [],
             "preserved_source": source is not None,
@@ -379,3 +418,39 @@ class Litematic:
             "allow_lossy": allow_lossy,
         }
         return result, report
+
+
+def painting_tag(painting: Painting, origin: Point) -> Any:
+    # Hanging entity coordinates are relative to the region's normalized low corner.
+    raw_uuid = uuid.UUID(painting.id).int
+    words = [(raw_uuid >> shift) & 0xFFFFFFFF for shift in (96, 64, 32, 0)]
+    return nbtlib.Compound(
+        {
+            "id": nbtlib.String("minecraft:painting"),
+            "variant": nbtlib.String("minecraft:" + painting.variant),
+            "facing": nbtlib.Byte({"south": 0, "west": 1, "north": 2, "east": 3}[painting.facing]),
+            **{
+                f"Tile{axis.upper()}": nbtlib.Int(painting.anchor[i] - origin[i])
+                for i, axis in enumerate("xyz")
+            },
+            "Pos": nbtlib.List[nbtlib.Double](
+                [nbtlib.Double(painting.center()[i] - origin[i]) for i in range(3)]
+            ),
+            "Rotation": nbtlib.List[nbtlib.Float](
+                [
+                    nbtlib.Float(
+                        {"south": 0, "west": 90, "north": 180, "east": 270}[painting.facing]
+                    ),
+                    nbtlib.Float(0),
+                ]
+            ),
+            "Motion": nbtlib.List[nbtlib.Double]([nbtlib.Double(0)] * 3),
+            "UUID": nbtlib.IntArray([v if v < 1 << 31 else v - (1 << 32) for v in words]),
+            "Invulnerable": nbtlib.Byte(0),
+            "OnGround": nbtlib.Byte(0),
+            "PortalCooldown": nbtlib.Int(0),
+            "Air": nbtlib.Short(300),
+            "FallDistance": nbtlib.Float(0),
+            "Fire": nbtlib.Short(-1),
+        }
+    )

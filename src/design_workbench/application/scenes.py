@@ -88,6 +88,7 @@ class SceneService:
             return {
                 "revision": scene.revision,
                 "changed": len(plan.changes),
+                "paintings": [p.as_dict() for p in plan.paintings],
                 "touched": plan.touched,
                 "truncated": len(plan.changes) > 10_000,
                 "changes": [
@@ -100,6 +101,7 @@ class SceneService:
                 ],
             }
         scene.cells = plan.cells
+        scene.paintings = plan.paintings
         result = self.repository.commit(
             scene, plan.changes, request.expected_revision, request.request_id, digest
         )

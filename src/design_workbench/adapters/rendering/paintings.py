@@ -1,11 +1,12 @@
 from functools import lru_cache
 from typing import Any
 
-from design_workbench.domain.models import Point, Scene
+from design_workbench.domain.models import Scene
 from design_workbench.domain.paintings import HORIZONTAL, VARIANTS, Painting
 from design_workbench.domain.placement import FACES
 
 from ..formats.litematic import Litematic, region_bounds
+from ..formats.painting_entities import read_painting_entity
 
 
 @lru_cache(maxsize=2)
@@ -15,16 +16,9 @@ def imported_paintings(payload: bytes) -> list[Painting]:
     for name, region in root["Regions"].items():
         origin = region_bounds(region).low
         for i, entry in enumerate(region.get("Entities", [])):
-            if str(entry.get("id", "")) != "minecraft:painting":
-                continue
-            variant = str(entry.get("variant", "")).removeprefix("minecraft:")
-            if variant not in VARIANTS or not all("Tile" + axis in entry for axis in "XYZ"):
-                continue
-            facing = ("south", "west", "north", "east")[int(entry.get("facing", 0)) % 4]
-            anchor: Point = tuple(
-                origin[j] + int(entry["Tile" + axis]) for j, axis in enumerate("XYZ")
-            )  # type: ignore[assignment]
-            result.append(Painting(f"import:{name}:{i}", anchor, facing, variant))
+            painting = read_painting_entity(entry, origin, f"import:{name}:{i}")
+            if painting is not None:
+                result.append(painting)
     return result
 
 

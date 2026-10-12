@@ -12,8 +12,10 @@ import nbtlib
 from design_workbench.domain.editing import Registry
 from design_workbench.domain.errors import WorkbenchError
 from design_workbench.domain.models import BlockState, Bounds, Cell, Point, Scene
-from design_workbench.domain.paintings import VARIANTS, Painting
+from design_workbench.domain.paintings import Painting
 from design_workbench.domain.placement import FACES
+
+from .painting_entities import read_painting_entity
 
 REGION_KEYS = {
     "Position",
@@ -183,25 +185,13 @@ class Litematic:
                     protected.add(point3(bounds.low[i] + position[i] for i in range(3)))
                     block_entities += 1
                 for entry in region.get("Entities", []):
-                    if (
-                        str(entry.get("id", "")) == "minecraft:painting"
-                        and str(entry.get("variant", "")).removeprefix("minecraft:") in VARIANTS
-                        and all("Tile" + axis in entry for axis in "XYZ")
-                    ):
-                        facing = ("south", "west", "north", "east")[int(entry.get("facing", 0)) % 4]
-                        anchor = point3(
-                            bounds.low[i] + int(entry["Tile" + axis])
-                            for i, axis in enumerate("XYZ")
-                        )
-                        painting = Painting(
-                            "imported",
-                            anchor,
-                            facing,
-                            str(entry["variant"]).removeprefix("minecraft:"),
-                        )
+                    painting = read_painting_entity(entry, bounds.low, "imported")
+                    if painting is not None:
                         for p in painting.positions():
                             protected.add(p)
-                            protected.add(point3(p[i] - FACES[facing][i] for i in range(3)))
+                            protected.add(
+                                point3(p[i] - FACES[painting.facing][i] for i in range(3))
+                            )
                     if "Pos" in entry:
                         protected.add(
                             point3(
@@ -385,7 +375,7 @@ class Litematic:
                 raise WorkbenchError("EXPORT_PAINTING", "画没有可导出的区域。")
             region = regions[painting_region]
             region.setdefault("Entities", nbtlib.List[nbtlib.Compound]()).append(
-                painting_tag(painting, boxes[painting_region].low)
+                painting_tag(painting, boxes[painting_region].low, scene.data_version)
             )
         meta = root["Metadata"]
         meta["Name"] = nbtlib.String(scene.name)
@@ -420,8 +410,16 @@ class Litematic:
         return result, report
 
 
-def painting_tag(painting: Painting, origin: Point) -> Any:
+def painting_tag(painting: Painting, origin: Point, data_version: int = 3465) -> Any:
     # Hanging entity coordinates are relative to the region's normalized low corner.
+    local = [painting.anchor[i] - origin[i] for i in range(3)]
+    # Since Java 1.21.5, BlockAttachedEntity stores BlockPos.CODEC. Its
+    # Codec.INT_STREAM serializes through NbtOps as a three-entry IntArray.
+    attachment = (
+        {"block_pos": nbtlib.IntArray(local)}
+        if data_version >= 4325
+        else {f"Tile{axis.upper()}": nbtlib.Int(local[i]) for i, axis in enumerate("xyz")}
+    )
     raw_uuid = uuid.UUID(painting.id).int
     words = [(raw_uuid >> shift) & 0xFFFFFFFF for shift in (96, 64, 32, 0)]
     return nbtlib.Compound(
@@ -429,10 +427,7 @@ def painting_tag(painting: Painting, origin: Point) -> Any:
             "id": nbtlib.String("minecraft:painting"),
             "variant": nbtlib.String("minecraft:" + painting.variant),
             "facing": nbtlib.Byte({"south": 0, "west": 1, "north": 2, "east": 3}[painting.facing]),
-            **{
-                f"Tile{axis.upper()}": nbtlib.Int(painting.anchor[i] - origin[i])
-                for i, axis in enumerate("xyz")
-            },
+            **attachment,
             "Pos": nbtlib.List[nbtlib.Double](
                 [nbtlib.Double(painting.center()[i] - origin[i]) for i in range(3)]
             ),

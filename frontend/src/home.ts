@@ -332,11 +332,7 @@ async function loadHomeData() {
       versions = result.items;
       versionSelect.replaceChildren(
         ...versions.map(
-          (item) =>
-            new Option(
-              `Java ${item.minecraft_version}`,
-              item.minecraft_version,
-            ),
+          (item) => new Option(`Java ${item.minecraft_version}`, item.minecraft_version),
         ),
       );
       versionSelect.value = versions.some((item) => item.minecraft_version === selected)

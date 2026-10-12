@@ -680,7 +680,7 @@ export class Viewer {
       };
       return {
         position: painting.anchor,
-        location: [0.5,0.5,0.5],
+        location: [0.5, 0.5, 0.5],
         normal: vectors[painting.facing],
         group: '画',
         protected: painting.protected,

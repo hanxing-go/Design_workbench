@@ -668,22 +668,28 @@ viewer.onHit = (hit, event) =>
     } else if (action === 'place') {
       if (hit.painting) throw new Error('请点击支撑方块表面');
       if (paintingVariant !== null) {
-        const faces: Record<string, string> = {'0,0,-1':'north','0,0,1':'south','1,0,0':'east','-1,0,0':'west'};
+        const faces: Record<string, string> = {
+          '0,0,-1': 'north',
+          '0,0,1': 'south',
+          '1,0,0': 'east',
+          '-1,0,0': 'west',
+        };
         const face = faces[hit.normal.join(',')];
         if (!face) throw new Error('画需要竖直墙面');
-        await commit([{op:'painting',support:hit.position,face,variant:paintingVariant}]);
-      } else await commit([
-        {
-          op: 'place',
-          hit: hit.position,
-          normal: hit.normal,
-          location: hit.location,
-          facing: viewer.placementFacing(),
-          automatic: materialControls.automatic,
-          state: currentState,
-          group: input('result-group'),
-        },
-      ]);
+        await commit([{ op: 'painting', support: hit.position, face, variant: paintingVariant }]);
+      } else
+        await commit([
+          {
+            op: 'place',
+            hit: hit.position,
+            normal: hit.normal,
+            location: hit.location,
+            facing: viewer.placementFacing(),
+            automatic: materialControls.automatic,
+            state: currentState,
+            group: input('result-group'),
+          },
+        ]);
     } else if (!hit.ground) {
       if (hit.painting) {
         if (hit.protected) throw new Error('导入的画为只读实体，原始 NBT 会保留');
@@ -695,13 +701,6 @@ viewer.onHit = (hit, event) =>
     }
   });
 
-el<HTMLInputElement>('auto-snap').onchange = () => {
-  message(
-    el<HTMLInputElement>('auto-snap').checked
-      ? '自动吸附已开启；本次放置按点击面定向'
-      : '自动吸附已关闭；使用手动属性',
-  );
-};
 el('painting-variant').onchange = () => {
   if (paintingVariant !== null) paintingVariant = input('painting-variant');
 };

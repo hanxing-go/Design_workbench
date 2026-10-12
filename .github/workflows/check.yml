@@ -30,6 +30,7 @@ jobs:
     env:
       # The full browser supports pointer-lock input; headless shell emits warp deltas.
       DW_BROWSER_CHANNEL: chromium
+      DW_TEST_VERSIONS: 1.20.1,1.21.4,26.1
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -44,5 +45,7 @@ jobs:
       - run: npm run check --prefix frontend
       - run: npm run build --prefix frontend
       - run: uv run --extra gui --extra ai --extra render design-workbench resources setup --config config.example.toml
+      - run: uv run --extra gui --extra ai --extra render design-workbench resources setup --minecraft-version 1.21.4 --config config.example.toml
+      - run: uv run --extra gui --extra ai --extra render design-workbench resources setup --minecraft-version 26.1 --config config.example.toml
       - run: uv run --extra gui --extra ai --extra render playwright install --with-deps chromium
       - run: uv run --extra gui --extra ai --extra render pytest -m 'e2e or resources'

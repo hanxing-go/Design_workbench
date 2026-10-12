@@ -14,11 +14,13 @@ from typing import Any
 
 from design_workbench.domain.errors import WorkbenchError
 from design_workbench.domain.models import Bounds, Cell, Point, Scene, chunk_key
+from design_workbench.domain.paintings import Painting
 
 from ..resources.catalog import Catalog
 from ..resources.pack import ResourcePack
 from ..storage.sqlite import RenderRead, SqliteStore, decode_chunk
 from .packets import RenderedChunk, render_chunk
+from .paintings import painting_packet
 from .signs import sign_texts
 
 FLUIDS = {"minecraft:water", "minecraft:lava", "minecraft:bubble_column"}
@@ -137,6 +139,7 @@ class _ProjectProjection:
             Bounds(tuple(data["bounds"]["low"]), tuple(data["bounds"]["high"])),
             cells,
             protected,
+            [Painting.from_dict(value) for value in data.get("paintings", [])],
         )
         self.render_dirty.update(changed)
         # Fluid corners sample the 3x3 XZ neighbourhood and cells one layer above.
@@ -199,6 +202,7 @@ class _ProjectProjection:
             "bounds": scene.bounds.as_dict(),
             "blocks": blocks,
             "stored_cells": stored,
+            "paintings": len(scene.paintings),
             "occupied_bounds": {"low": list(low), "high": list(high)} if low and high else None,
             "groups": dict(groups),
             "materials": dict(materials),
@@ -258,6 +262,7 @@ class _ProjectProjection:
             "warnings": list(warnings.values()),
             "atlas": pack.atlas,
             "resource_hash": resource_hash,
+            "paintings": painting_packet(self.scene, self.source),
         }
 
 

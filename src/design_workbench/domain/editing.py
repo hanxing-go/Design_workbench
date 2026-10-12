@@ -393,13 +393,13 @@ class Editor:
                 support, face = as_point(operation["support"]), operation["face"]
                 anchor = as_point([support[i] + FACES[face][i] for i in range(3)])
                 variant = operation.get("variant", "auto")
-                candidates = (
+                painting_variants = (
                     sorted(VARIANTS, key=lambda name: -math.prod(VARIANTS[name]))
                     if variant == "auto"
                     else [validate_variant(variant)]
                 )
-                for candidate in candidates:
-                    painting = Painting(str(uuid.uuid4()), anchor, face, candidate)
+                for painting_variant in painting_variants:
+                    painting = Painting(str(uuid.uuid4()), anchor, face, painting_variant)
                     if fits(painting, cells, scene.bounds, paintings, scene.protected):
                         normal = FACES[face]
                         if any(

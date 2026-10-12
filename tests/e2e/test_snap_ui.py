@@ -103,30 +103,28 @@ def test_wall_snap_manual_override_painting_history_and_export(tmp_path: Path) -
                 ).json()
                 return result["blocks"][0]
 
-            assert page.locator("#auto-snap").is_checked()
+            assert page.locator("#automatic-placement").is_checked()
             material("torch")
             click_wall(0, 1)
             wait(2)
             assert state(0, 1)["name"] == "minecraft:wall_torch"
             assert state(0, 1)["properties"]["facing"] == "south"
             material("ladder")
-            page.locator('select[data-property="facing"]').select_option("west")
             click_wall(1, 1)
             wait(3)
             assert state(1, 1)["properties"]["facing"] == "south"
-            assert page.locator('select[data-property="facing"]').input_value() == "west"
-            page.locator("#auto-snap").uncheck()
+            # An explicit direction switches the shared inspector to manual mode.
+            page.locator('[data-variant-property="facing"][data-variant-value="south"]').click()
+            assert not page.locator("#automatic-placement").is_checked()
             click_wall(2, 1)
             wait(4)
-            assert state(2, 1)["properties"]["facing"] == "west"
-            page.locator("#auto-snap").check()
+            assert state(2, 1)["properties"]["facing"] == "south"
             material("oak_sign")
-            page.locator('select[data-property="rotation"]').select_option("7")
+            page.locator("#automatic-placement").check()
             click_wall(3, 1)
             wait(5)
             assert state(3, 1)["name"] == "minecraft:oak_wall_sign"
             assert state(3, 1)["properties"]["facing"] == "south"
-            assert page.locator('select[data-property="rotation"]').input_value() == "7"
             page.locator("#painting-variant").select_option("match")
             page.locator("#choose-painting").click()
             click_wall(5, 1)

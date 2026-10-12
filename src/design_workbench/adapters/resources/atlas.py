@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-RECIPE_VERSION = 4
+RECIPE_VERSION = 5
 
 
 def build_atlas(directory: Path) -> dict[str, Any]:

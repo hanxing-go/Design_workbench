@@ -1,6 +1,14 @@
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, StrictInt, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    FiniteFloat,
+    StrictInt,
+    StringConstraints,
+    model_validator,
+)
 
 type Position = tuple[StrictInt, StrictInt, StrictInt]
 
@@ -38,6 +46,17 @@ class SetBlocks(Contract):
     blocks: list[PlacedBlock] = Field(min_length=1, max_length=500_000)
 
 
+class AttachmentRequest(Contract):
+    op: Literal["place"]
+    support: Position
+    face: Literal["up", "down", "north", "south", "east", "west"]
+    heading: Literal["north", "south", "east", "west"] = "north"
+    hit_height: FiniteFloat = Field(default=0.5, ge=0, le=1)
+    ground: bool = False
+    state: StateInput
+    group: str = Field(default="main", min_length=1, max_length=128)
+
+
 class Place(Contract):
     op: Literal["place"]
     state: StateInput
@@ -48,19 +67,24 @@ class Place(Contract):
     group: str = Field(default="main", min_length=1, max_length=128)
     automatic: bool = True
 
-
     @model_validator(mode="before")
     @classmethod
     def migrate_attachment_request(cls, value: Any) -> Any:
         if isinstance(value, dict) and "support" in value:
-            from design_workbench.domain.placement import FACES, OPPOSITE, snap_state
             from design_workbench.domain.models import BlockState
-            value = dict(value)
+            from design_workbench.domain.placement import FACES, OPPOSITE, snap_state
+
+            value = AttachmentRequest.model_validate(value).model_dump()
             face = value.pop("face", None)
             if face not in FACES:
                 raise ValueError("Invalid attachment face")
             state = value["state"]
-            snapped = snap_state(BlockState.make(state["name"], state.get("properties", {})), face, value.get("heading", "north"), value.get("hit_height", 0.5))
+            snapped = snap_state(
+                BlockState.make(state["name"], state.get("properties", {})),
+                face,
+                value.get("heading", "north"),
+                value.get("hit_height", 0.5),
+            )
             value["state"] = {"name": snapped.name, "properties": dict(snapped.properties)}
             value["hit"] = value.pop("support")
             value["normal"] = FACES[face]

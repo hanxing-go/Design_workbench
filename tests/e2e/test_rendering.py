@@ -158,7 +158,7 @@ def test_special_block_scene_transparency_and_thumbnails(tmp_path: Path) -> None
                 page.locator(".material-advanced summary").click()
                 page.locator('select[data-property="part"]').select_option("foot")
                 page.locator('select[data-property="facing"]').select_option("north")
-                page.locator("#auto-snap").uncheck()
+                page.locator("#automatic-placement").uncheck()
                 page.locator('[data-tool="place"]').click()
                 click = page.evaluate("""() => {
                   const v=window.workbench.viewer;

@@ -42,7 +42,7 @@ uv run --extra gui design-workbench serve --config config.example.toml
 
 从源码安装需要 Git、Python 3.12、uv 和 Node.js 22+，浏览器须支持 WebGL。安装已构建的 wheel 时不需要 Node.js，前端也不通过 CDN 加载。
 
-以下命令拉取本文对应的 `codex/p6-ai-tools` 分支并完成首次安装：
+以下命令拉取本文对应的 `main` 主分支并完成首次安装：
 
 ```powershell
 git clone https://github.com/hanxing-go/Design_workbench.git

@@ -58,6 +58,7 @@ def main() -> None:
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             env=env,
             cwd=directory,
         )
@@ -140,7 +141,13 @@ print('Installed design task, approval gate, persistence and candidate fork veri
 """
         subprocess.run([str(binary), "-c", validate], check=True, env=env, cwd=directory)
         descriptions = subprocess.run(
-            [*command, "tools"], check=True, capture_output=True, text=True, env=env, cwd=directory
+            [*command, "tools"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            cwd=directory,
         )
         assert {"scene.commit_edit", "design.start", "candidate.save"} <= {
             item["name"] for item in json.loads(descriptions.stdout)["tools"]

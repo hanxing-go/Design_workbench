@@ -145,7 +145,11 @@ class RenameRequest(HistoryRequest):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 
 
-class CreateRequest(Contract):
+class VersionRequest(Contract):
+    minecraft_version: str | None = Field(default=None, min_length=1, max_length=32)
+
+
+class CreateRequest(VersionRequest):
     name: str = Field(default="新建筑", min_length=1, max_length=128)
     bounds: Box = Field(default_factory=lambda: Box(low=(-512, -64, -512), high=(511, 511, 511)))
 

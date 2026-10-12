@@ -11,6 +11,8 @@ class ToolRequest(Contract):
 
 
 class SearchTool(ToolRequest):
+    minecraft_version: str | None = Field(default=None, min_length=1, max_length=32)
+    project: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{1,80}$")
     query: str = Field(default="", max_length=256)
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=24, ge=1, le=128)
@@ -18,6 +20,8 @@ class SearchTool(ToolRequest):
 
 
 class MaterialTool(ToolRequest):
+    minecraft_version: str | None = Field(default=None, min_length=1, max_length=32)
+    project: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{1,80}$")
     state: StateInput
 
 

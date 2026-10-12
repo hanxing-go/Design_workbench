@@ -54,7 +54,7 @@ def test_official_pack_all_states_and_representative_models(catalog: Catalog) ->
 def test_resource_cache_moved_to_clean_path(tmp_path: Path, catalog: Catalog) -> None:
     original = ROOT / ".local/cache/resources"
     relocated = tmp_path / "portable/resources"
-    shutil.copytree(original, relocated)
+    shutil.copytree(original / catalog.version, relocated / catalog.version)
     pack = ResourceManager(relocated).active(catalog.version)
     assert pack is not None
     assert pack.directory.is_relative_to(relocated)

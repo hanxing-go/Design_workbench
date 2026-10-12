@@ -394,8 +394,7 @@ class Designs:
 
         from design_workbench.interfaces.tools import TOOL_CONTRACTS
 
-        if not request.tool.startswith("catalog."):
-            arguments["project"] = current["project"]
+        arguments["project"] = current["project"]
         try:
             parsed = TOOL_CONTRACTS[request.tool][0].model_validate(arguments)
         except ValidationError as error:
@@ -408,13 +407,7 @@ class Designs:
             arguments["request"]["wait"] = False
 
         def perform(run: dict[str, Any]) -> dict[str, Any]:
-            arguments["project"] = (
-                run["project"]
-                if not request.tool.startswith("catalog.")
-                else arguments.get("project")
-            )
-            if request.tool.startswith("catalog."):
-                arguments.pop("project", None)
+            arguments["project"] = run["project"]
             if request.tool == "scene.commit_edit":
                 scene = self.tools.workbench.service(
                     self.tools.project_path(run["project"])

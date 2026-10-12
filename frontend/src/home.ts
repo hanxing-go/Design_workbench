@@ -6,6 +6,7 @@ import type { Summary } from './types';
 
 type HomeProject = Summary & { project_id: string };
 type Info = { minecraft_version: string; resources_ready: boolean };
+type Versions = { default: string; items: Info[] };
 const root = document.querySelector<HTMLDivElement>('#app')!;
 root.className = 'home-mode';
 root.innerHTML = home;
@@ -20,6 +21,45 @@ let loading = false;
 let starter = false;
 let noticeTimer = 0;
 let info: Info | null = null;
+let versions: Info[] = [];
+const versionSelect = el<HTMLSelectElement>('home-minecraft-version');
+
+function updateResourceStatus() {
+  const ready = versions.find(
+    (item) => item.minecraft_version === versionSelect.value,
+  )?.resources_ready;
+  el('home-resource-status').textContent = ready
+    ? '此版本素材已就绪。'
+    : '首次使用此版本，请下载官方素材；之后可离线建造。';
+  el<HTMLButtonElement>('home-resources-setup').disabled = loading || !!ready;
+}
+versionSelect.onchange = updateResourceStatus;
+el('home-resources-setup').onclick = async () => {
+  if (loading) return;
+  loading = true;
+  versionSelect.disabled = true;
+  el<HTMLButtonElement>('home-create-submit').disabled = true;
+  updateResourceStatus();
+  el('home-resource-status').textContent = '正在下载官方素材并生成图集，请稍候…';
+  try {
+    const result = await api<Info>('/api/resources/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ minecraft_version: versionSelect.value }),
+    });
+    const item = versions.find((item) => item.minecraft_version === result.minecraft_version);
+    if (item) item.resources_ready = result.resources_ready;
+    el('home-create-error').textContent = '';
+  } catch (error) {
+    el('home-create-error').textContent =
+      error instanceof Error ? error.message : '素材下载失败，请重试。';
+  } finally {
+    loading = false;
+    versionSelect.disabled = false;
+    el<HTMLButtonElement>('home-create-submit').disabled = false;
+    updateResourceStatus();
+  }
+};
 
 function notice(text: string, error = false) {
   const output = el('home-notice');
@@ -78,7 +118,7 @@ function renderProjects() {
       const title = document.createElement('strong');
       title.textContent = project.name;
       const details = document.createElement('small');
-      details.textContent = `${project.blocks.toLocaleString()} 个方块 · 修订 ${project.revision}`;
+      details.textContent = `Java ${project.minecraft_version} · ${project.blocks.toLocaleString()} 个方块 · 修订 ${project.revision}`;
       content.append(title, details);
       const arrow = document.createElement('span');
       arrow.className = 'project-arrow';
@@ -97,6 +137,7 @@ function showCreate(cabin = false) {
   nameInput.value = cabin ? '我的林间小屋' : '';
   el('home-create-title').textContent = cabin ? '从一间小屋开始' : '给你的灵感起个名字';
   el('home-create-error').textContent = '';
+  updateResourceStatus();
   createDialog.showModal();
   nameInput.focus();
 }
@@ -139,12 +180,15 @@ el<HTMLFormElement>('home-create-form').onsubmit = async (event) => {
   submit.disabled = true;
   submit.textContent = '正在准备你的世界…';
   try {
+    info = await api<Info>(
+      `/api/info?minecraft_version=${encodeURIComponent(versionSelect.value)}`,
+    );
     if (info && !info.resources_ready)
-      throw new Error('方块素材尚未配置，请先完成本地资源设置再开始建造。');
+      throw new Error('此版本素材尚未配置，请点击「下载所选版本的官方素材」。');
     const project = await api<HomeProject>('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, minecraft_version: versionSelect.value }),
     });
     openProject(project.project_id, starter);
   } catch (error) {
@@ -181,12 +225,21 @@ fileInput.onchange = async () => {
   });
   notice(`正在导入「${file.name}」…`);
   try {
-    if (info && !info.resources_ready) throw new Error('方块素材尚未配置，请先完成本地资源设置。');
+    const probe = new FormData();
+    probe.set('file', file);
+    const blueprint = await api<Info>('/api/blueprints/info', { method: 'POST', body: probe });
+    if (!blueprint.resources_ready) {
+      versionSelect.value = blueprint.minecraft_version;
+      throw new Error(
+        `蓝图使用 Java ${blueprint.minecraft_version}。请在「开始建造」中下载此版本素材，再导入。`,
+      );
+    }
     const project = await api<HomeProject>('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: file.name.replace(/\.litematic$/i, '').slice(0, 128) || '导入的建筑',
+        minecraft_version: blueprint.minecraft_version,
       }),
     });
     // Keep the newly created project visible if an invalid blueprint cannot be imported.
@@ -239,8 +292,23 @@ async function loadHomeData() {
   const results = await Promise.allSettled([
     api<Info>('/api/info'),
     api<{ items: HomeProject[]; errors?: unknown[] }>('/api/projects'),
+    api<Versions>('/api/versions'),
   ]);
   const connection = el('home-connection');
+  if (results[2].status === 'fulfilled') {
+    versions = results[2].value.items;
+    versionSelect.replaceChildren(
+      ...versions.map(
+        (item) =>
+          new Option(
+            `Java ${item.minecraft_version}${item.resources_ready ? ' · 素材已安装' : ''}`,
+            item.minecraft_version,
+          ),
+      ),
+    );
+    versionSelect.value = results[2].value.default;
+    updateResourceStatus();
+  }
   if (results[0].status === 'fulfilled') {
     info = results[0].value;
     el('home-version').textContent = `JAVA ${info.minecraft_version}`;

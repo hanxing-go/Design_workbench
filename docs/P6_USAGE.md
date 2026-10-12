@@ -18,8 +18,8 @@ CLI 适合有终端和本地图片读取能力的 Agent：输入输出明确、�
 
 ```powershell
 uv sync --locked --extra gui --extra ai --extra render
-uv run python -m playwright install chromium
-uv run design-workbench resources setup --config config.example.toml
+uv run --extra gui --extra ai --extra render python -m playwright install chromium
+uv run --extra gui --extra ai --extra render design-workbench resources setup --config config.example.toml
 ```
 
 `ai` 是 MCP Python SDK，`render` 是 Playwright，`gui` 包含网页服务与素材图集所需依赖。仅查询、编辑和导出不需要启动浏览器。浏览器是本机依赖，不打进 wheel；缺少浏览器时截图返回 `BROWSER_UNAVAILABLE`。Windows 已有 Chrome 时，可在 TOML 配置 `browser_channel = "chrome"`，或设置 `DW_BROWSER_CHANNEL=chrome`；默认使用 Playwright 管理的 Chromium。
@@ -27,9 +27,9 @@ uv run design-workbench resources setup --config config.example.toml
 ## CLI 优先的接入
 
 ```powershell
-uv run design-workbench tools --config config.example.toml
-uv run design-workbench catalog "橡木" --config config.example.toml
-uv run design-workbench tool project.create create.json --config config.example.toml
+uv run --extra gui --extra ai --extra render design-workbench tools --config config.example.toml
+uv run --extra gui --extra ai --extra render design-workbench catalog "橡木" --config config.example.toml
+uv run --extra gui --extra ai --extra render design-workbench tool project.create create.json --config config.example.toml
 ```
 
 `tools` 输出完整 JSON Schema。`tool` 的输入是 JSON 文件、输出是 JSON，出错时退出码为 1。现有 `create/summary/edit --preview/history/import/export` 命令继续可用；`inspect` 可对任意项目文件使用选区 JSON。新版 `tool` 使用配置 `data_dir/projects` 中的项目 ID，和 GUI、MCP 一致。
@@ -67,9 +67,9 @@ uv run design-workbench tool project.create create.json --config config.example.
 ```
 
 ```powershell
-uv run design-workbench tool scene.preview_edit edit.json --config config.example.toml
-uv run design-workbench tool scene.commit_edit edit.json --config config.example.toml
-uv run design-workbench tool render.views views.json --config config.example.toml --output-dir artifacts/my-cabin/r1
+uv run --extra gui --extra ai --extra render design-workbench tool scene.preview_edit edit.json --config config.example.toml
+uv run --extra gui --extra ai --extra render design-workbench tool scene.commit_edit edit.json --config config.example.toml
+uv run --extra gui --extra ai --extra render design-workbench tool render.views views.json --config config.example.toml --output-dir artifacts/my-cabin/r1
 ```
 
 截图请求 `views.json`：
@@ -98,7 +98,7 @@ CLI 将实际 PNG 与 `manifest-任务ID.json` 保存到指定目录。给不同
 stdio 服务启动命令：
 
 ```powershell
-uv run design-workbench mcp --config config.example.toml
+uv run --extra gui --extra ai --extra render design-workbench mcp --config config.example.toml
 ```
 
 客户端也可直接启动虚拟环境的 Python：`python -m design_workbench.interfaces.cli mcp --config 配置文件的绝对路径`。按所用客户端的配置格式填写 command/args；不需要为本项目配置模型凭据。协议输出只走 stdout，日志写入配置的 log_dir。
@@ -154,7 +154,7 @@ uv run design-workbench mcp --config config.example.toml
 `scripts/p6_mcp_client.py` 是独立 stdio 客户端，实际执行 initialize/list_tools/call_tool，保存协议版本、请求、结果和 PNG。下一步操作由调用它的 Agent 在读图后选择，它不包含自动造房脚本：
 
 ```powershell
-uv run python scripts/p6_mcp_client.py render.views views.json --config config.example.toml --output-dir artifacts/client/r1
+uv run --extra gui --extra ai --extra render python scripts/p6_mcp_client.py render.views views.json --config config.example.toml --output-dir artifacts/client/r1
 ```
 
 模型驱动的完整验收经过及失败尝试见 [P6_ACCEPTANCE](P6_ACCEPTANCE.md)。

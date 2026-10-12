@@ -6,6 +6,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from threading import Lock
 from typing import Annotated, Any
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -13,7 +14,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from design_workbench.adapters.formats.litematic import Litematic
 from design_workbench.adapters.rendering.cache import RenderCache
+from design_workbench.adapters.resources.acquire import fetch_official
+from design_workbench.adapters.resources.catalog import Catalog
 from design_workbench.adapters.storage.sqlite import SqliteStore
 from design_workbench.application.contracts import (
     CreateRequest,
@@ -22,6 +26,7 @@ from design_workbench.application.contracts import (
     HistoryRequest,
     RenameRequest,
     Selector,
+    VersionRequest,
 )
 from design_workbench.application.design_contracts import (
     CandidateOpen,
@@ -62,11 +67,22 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.tools = tools
     projects = settings.data_dir / "projects"
     projects.mkdir(parents=True, exist_ok=True)
+    resource_lock = Lock()
 
     def project_path(identifier: str) -> Path:
         if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", identifier):
             raise WorkbenchError("INVALID_PROJECT_ID", "项目标识非法。")
         return projects / f"{identifier}.dwbench"
+
+    def context(project: str | None = None, minecraft_version: str | None = None) -> Workbench:
+        selected = (
+            workbench.for_project(project_path(project))
+            if project
+            else workbench.for_version(minecraft_version)
+        )
+        if minecraft_version and selected.catalog.version != minecraft_version:
+            raise WorkbenchError("VERSION_MISMATCH", "请求版本与项目版本不一致。")
+        return selected
 
     @app.middleware("http")
     async def request_log(request: Request, call_next: Any) -> Response:
@@ -139,19 +155,64 @@ def create_app(settings: Settings) -> FastAPI:
         )
 
     @app.get("/api/info")
-    def info() -> dict[str, Any]:
+    def info(project: str | None = None, minecraft_version: str | None = None) -> dict[str, Any]:
+        selected = context(project, minecraft_version)
         return {
             "version": "0.1.0",
-            "minecraft_version": workbench.catalog.version,
-            "data_version": workbench.catalog.data_version,
-            "resources_ready": workbench.pack is not None,
-            "resource_manifest": workbench.pack.manifest if workbench.pack else None,
+            "minecraft_version": selected.catalog.version,
+            "data_version": selected.catalog.data_version,
+            "resources_ready": selected.pack is not None,
+            "resource_manifest": selected.pack.manifest if selected.pack else None,
         }
+
+    @app.get("/api/versions")
+    def versions() -> dict[str, Any]:
+        return {
+            "default": settings.minecraft_version,
+            "items": [
+                {
+                    "minecraft_version": version,
+                    "data_version": Catalog(version).data_version,
+                    "resources_ready": workbench.resources.active(version) is not None,
+                }
+                for version in Catalog.versions()
+            ],
+        }
+
+    @app.post("/api/resources/setup")
+    def setup_resources(request: VersionRequest) -> dict[str, Any]:
+        selected = workbench.for_version(request.minecraft_version)
+        with resource_lock:
+            if selected.pack is None:
+                try:
+                    jar, provenance = fetch_official(
+                        selected.catalog.version, settings.cache_dir / "downloads"
+                    )
+                    selected.resources.import_jar(
+                        jar, selected.catalog.version, Path(provenance["language_path"]), provenance
+                    )
+                except OSError as error:
+                    raise WorkbenchError(
+                        "RESOURCE_DOWNLOAD_FAILED", f"官方素材下载失败，请重试：{error}"
+                    ) from error
+        return info(minecraft_version=selected.catalog.version)
+
+    @app.post("/api/blueprints/info")
+    def blueprint_info(file: Annotated[UploadFile, File()]) -> dict[str, Any]:
+        document = Litematic.parse(file.file.read(32_000_001))
+        catalog = Catalog.for_data_version(int(document["MinecraftDataVersion"]))
+        return info(minecraft_version=catalog.version)
 
     @app.get("/api/catalog")
     def catalog(
-        query: str = "", offset: int = 0, limit: int = 24, category: str = ""
+        query: str = "",
+        offset: int = 0,
+        limit: int = 24,
+        category: str = "",
+        project: str | None = None,
+        minecraft_version: str | None = None,
     ) -> dict[str, Any]:
+        workbench = context(project, minecraft_version)
         result = workbench.catalog.search(query, offset, limit, category)
         for item in result["items"]:
             item["support"] = (
@@ -162,7 +223,13 @@ def create_app(settings: Settings) -> FastAPI:
         return result
 
     @app.get("/api/material/{name}")
-    def material(name: str, properties: str = "{}") -> dict[str, Any]:
+    def material(
+        name: str,
+        properties: str = "{}",
+        project: str | None = None,
+        minecraft_version: str | None = None,
+    ) -> dict[str, Any]:
+        workbench = context(project, minecraft_version)
         from design_workbench.domain.models import BlockState
 
         try:
@@ -180,7 +247,8 @@ def create_app(settings: Settings) -> FastAPI:
         return {**geometry, **state.as_dict(), "atlas": workbench.pack.atlas}
 
     @app.get("/api/atlas.png")
-    def atlas() -> FileResponse:
+    def atlas(project: str | None = None, minecraft_version: str | None = None) -> FileResponse:
+        workbench = context(project, minecraft_version)
         if workbench.pack is None:
             raise WorkbenchError("RESOURCES_NOT_READY", "素材尚未配置。")
         return FileResponse(workbench.pack.directory / "atlas.png", media_type="image/png")
@@ -220,6 +288,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.post("/api/projects", status_code=201)
     def create_project(request: CreateRequest) -> dict[str, Any]:
+        workbench = context(minecraft_version=request.minecraft_version)
         identifier = uuid.uuid4().hex
         SqliteStore.create(
             project_path(identifier),
@@ -285,6 +354,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.post("/api/projects/{identifier}/render")
     def render(identifier: str, known: dict[str, str] | None = None) -> dict[str, Any]:
+        workbench = context(project=identifier)
         if workbench.pack is None:
             raise WorkbenchError("RESOURCES_NOT_READY", "素材尚未配置。")
         return render_cache.render(

@@ -1020,11 +1020,13 @@ html:has(.home-mode) {
   font-size: 12px;
   margin-bottom: 9px;
 }
-.home-dialog input {
+.home-dialog input,
+.home-dialog select {
   background: #1a2117;
   padding: 12px;
   border-color: #131a10;
   box-shadow: 1px 1px #4b5b3b;
+  margin-bottom: 16px;
 }
 .home-form-error {
   min-height: 19px;

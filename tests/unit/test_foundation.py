@@ -1,4 +1,5 @@
 import ast
+import builtins
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,23 @@ def test_cli_works_from_other_directory(tmp_path: Path, monkeypatch: pytest.Monk
     result = CliRunner().invoke(app, ["info"])
     assert result.exit_code == 0
     assert '"minecraft_version": "1.20.1"' in result.stdout
+
+
+@pytest.mark.parametrize("missing", ["uvicorn", "fastapi"])
+def test_serve_missing_gui_dependency(monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
+    original_import = builtins.__import__
+
+    def import_without_gui(name: str, *args: object, **kwargs: object) -> object:
+        if name == missing or (missing == "fastapi" and name == "design_workbench.interfaces.http"):
+            raise ModuleNotFoundError(f"No module named '{missing}'", name=missing)
+        return original_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", import_without_gui)
+    result = CliRunner().invoke(app, ["serve"])
+    assert result.exit_code == 1
+    assert "GUI_DEPENDENCY_MISSING" in result.stdout
+    assert "uv run --extra gui design-workbench serve" in result.stdout
+    assert "Traceback" not in result.stdout
 
 
 def test_domain_dependency_direction() -> None:

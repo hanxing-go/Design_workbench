@@ -214,7 +214,7 @@ def test_resource_hash_refreshes_atlas_and_disposes_replaced_texture(
         Image.new("RGBA", (2, 2), color).save(buffer, format="PNG")
         pngs[name] = buffer.getvalue()
     page.route(
-        "**/api/atlas.png?resource_hash=*",
+        "**/api/atlas.png?**resource_hash=*",
         lambda route: route.fulfill(
             content_type="image/png", body=pngs[route.request.url.split("=")[-1]]
         ),

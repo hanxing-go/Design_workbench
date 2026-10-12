@@ -96,6 +96,8 @@ def test_atlas_rectangular_entity_and_declared_first_animation_frame(tmp_path: P
         assert atlas.getpixel((x, y)) == (0, 0, 255, 255)
     (tmp_path / "zh_cn.json").write_text("{}")
     manifest = {
+        "minecraft_version": "1.20.1",
+        "data_version": 3465,
         "sha256": "jar",
         "language_sha256": "lang",
         "bundle_hash": "old",

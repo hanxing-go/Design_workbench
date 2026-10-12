@@ -18,16 +18,21 @@ def get(url: str) -> bytes:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--commit", default="33a0f3e7323e124a81960a6d6c62df797d69cd85")
-    commit = parser.parse_args().commit
-    prefix = f"https://raw.githubusercontent.com/PrismarineJS/minecraft-data/{commit}/data/pc"
-    url = f"{prefix}/1.20/blocks.json"
+    parser.add_argument("--version", default="1.20.1")
+    args = parser.parse_args()
+    commit = args.commit
+    prefix = f"https://raw.githubusercontent.com/PrismarineJS/minecraft-data/{commit}/data"
+    paths = json.loads(get(f"{prefix}/dataPaths.json"))["pc"]
+    if args.version not in paths:
+        parser.error(f"No registry for Java {args.version} at commit {commit}")
+    url = f"{prefix}/{paths[args.version]['blocks']}/blocks.json"
     raw = get(url)
-    versions = json.loads(get(f"{prefix}/common/protocolVersions.json"))
-    version = next(item for item in versions if item["minecraftVersion"] == "1.20.1")
+    versions = json.loads(get(f"{prefix}/pc/common/protocolVersions.json"))
+    version = next(item for item in versions if item["minecraftVersion"] == args.version)
     blocks = json.loads(raw)
     document = {
         "schema_version": 1,
-        "minecraft_version": "1.20.1",
+        "minecraft_version": args.version,
         "data_version": version["dataVersion"],
         "provenance": {
             "source": url,
@@ -40,7 +45,7 @@ def main() -> None:
     }
     directory = ROOT / "src/design_workbench/data"
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "registry-1.20.1.json").write_text(
+    (directory / f"registry-{args.version}.json").write_text(
         json.dumps(document, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
     (directory / "minecraft-data-SOURCE.md").write_bytes(

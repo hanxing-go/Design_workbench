@@ -58,10 +58,26 @@ def main() -> None:
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             env=env,
             cwd=directory,
         )
         assert Path(check.stdout.strip()).is_relative_to(environment)
+        subprocess.run(
+            [
+                str(binary),
+                "-c",
+                (
+                    "from design_workbench.adapters.resources.catalog import Catalog; "
+                    "assert {'1.20.1', '1.21.4', '1.21.11', '26.1'} <= set(Catalog.versions()); "
+                    "assert Catalog('26.1').data_version == 4786; "
+                    "print('Packaged version registries verified')"
+                ),
+            ],
+            check=True,
+            env=env,
+            cwd=directory,
+        )
         command = [str(binary), "-m", "design_workbench.interfaces.cli"]
         project = directory / "portable.dwbench"
         request = directory / "edit.json"
@@ -125,7 +141,13 @@ print('Installed design task, approval gate, persistence and candidate fork veri
 """
         subprocess.run([str(binary), "-c", validate], check=True, env=env, cwd=directory)
         descriptions = subprocess.run(
-            [*command, "tools"], check=True, capture_output=True, text=True, env=env, cwd=directory
+            [*command, "tools"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            cwd=directory,
         )
         assert {"scene.commit_edit", "design.start", "candidate.save"} <= {
             item["name"] for item in json.loads(descriptions.stdout)["tools"]

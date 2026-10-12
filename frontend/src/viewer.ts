@@ -23,6 +23,7 @@ export class Viewer {
   versions: Record<string, string> = {};
   atlas!: Atlas;
   texture!: THREE.Texture;
+  atlasUrl = '/api/atlas.png';
   material!: THREE.MeshLambertMaterial;
   translucent!: THREE.MeshLambertMaterial;
   emissive!: THREE.MeshBasicMaterial;
@@ -108,7 +109,7 @@ export class Viewer {
   }
 
   async initializeTexture() {
-    this.texture = await this.loadTexture('/api/atlas.png');
+    this.texture = await this.loadTexture(this.atlasUrl);
     this.material = new THREE.MeshLambertMaterial({
       map: this.texture,
       alphaTest: 0.1,
@@ -143,7 +144,10 @@ export class Viewer {
 
   private async refreshTexture(hash: string) {
     const texture = await this.loadTexture(
-      '/api/atlas.png?resource_hash=' + encodeURIComponent(hash),
+      this.atlasUrl +
+        (this.atlasUrl.includes('?') ? '&' : '?') +
+        'resource_hash=' +
+        encodeURIComponent(hash),
     );
     // A newer resource packet can arrive before the image finishes loading.
     if (hash !== this.resourceHash) {

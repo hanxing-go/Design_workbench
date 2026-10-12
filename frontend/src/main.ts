@@ -27,6 +27,9 @@ function message(text: string, error = false) {
   feedbackTimer = window.setTimeout(() => (feedback.hidden = true), error ? 8000 : 3500);
 }
 async function api<T>(path: string, body?: unknown, method?: string): Promise<T> {
+  if (project && /^\/api\/(catalog|material\/)/.test(path)) {
+    path += (path.includes('?') ? '&' : '?') + 'project=' + encodeURIComponent(project);
+  }
   const response = await fetch(path, {
     method: method ?? (body === undefined ? 'GET' : 'POST'),
     headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
@@ -313,6 +316,14 @@ async function loadProjects(preferred?: string) {
   project = preferred ?? project ?? '';
   if (!data.items.some((item) => item.project_id === project)) project = data.items[0].project_id;
   projectsSelect.value = project;
+  const info = await api<{ minecraft_version: string; resources_ready: boolean }>(
+    `/api/info?project=${encodeURIComponent(project)}`,
+  );
+  el('version').textContent = `Java ${info.minecraft_version}`;
+  if (!info.resources_ready)
+    throw new Error(`Java ${info.minecraft_version} 素材尚未安装，请回到首页下载此版本素材。`);
+  viewer.atlasUrl = `/api/atlas.png?project=${encodeURIComponent(project)}`;
+  if (!viewer.texture) await viewer.initializeTexture();
   viewer.fitted = false;
   viewer.layer = Infinity;
   previous = null;
@@ -320,6 +331,12 @@ async function loadProjects(preferred?: string) {
   select(null);
   clearPreview();
   await refresh(true);
+  page = 0;
+  material = null;
+  currentState = { name: 'minecraft:oak_planks', properties: {} };
+  await loadCatalog();
+  const defaultMaterial = await api<{ items: Material[] }>('/api/catalog?query=oak_planks&limit=1');
+  if (defaultMaterial.items[0]) await chooseMaterial(defaultMaterial.items[0]);
   history.replaceState({}, '', `?project=${project}`);
   await designPanel.load();
   try {
@@ -753,7 +770,10 @@ document.addEventListener('visibilitychange', () => {
 bind('new-project', async () => {
   const name = prompt('建筑名称', '新建筑');
   if (!name) return;
-  const created = await api<{ project_id: string }>('/api/projects', { name });
+  const created = await api<{ project_id: string }>('/api/projects', {
+    name,
+    minecraft_version: summary?.minecraft_version,
+  });
   await loadProjects(created.project_id);
   message('新项目已创建');
 });
@@ -1044,15 +1064,7 @@ Object.defineProperty(window, 'workbench', {
 });
 fields();
 void safely(async () => {
-  const info = await api<{ minecraft_version: string; resources_ready: boolean }>('/api/info');
-  el('version').textContent = `Java ${info.minecraft_version}`;
-  if (!info.resources_ready)
-    throw new Error('尚未配置素材。先运行 design-workbench resources setup，再重启服务。');
-  await viewer.initializeTexture();
   await loadProjects(params.get('project') ?? undefined);
-  await loadCatalog();
-  const data = await api<{ items: Material[] }>('/api/catalog?query=oak_planks&limit=1');
-  if (data.items[0]) await chooseMaterial(data.items[0]);
   message('工作台就绪 · 所有修改自动保存');
   if (params.get('starter') === 'cabin' && summary?.blocks === 0 && summary.revision === 0)
     await createCabin();

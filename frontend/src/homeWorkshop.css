@@ -202,6 +202,7 @@
 #app.home-mode .project-art::after {
   content: '建筑预览 / 3D';
   position: absolute;
+  z-index: 2;
   top: 14px;
   left: 15px;
   color: #bdd0b2;

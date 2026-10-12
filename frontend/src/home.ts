@@ -299,11 +299,7 @@ async function loadHomeData() {
     versions = results[2].value.items;
     versionSelect.replaceChildren(
       ...versions.map(
-        (item) =>
-          new Option(
-            `Java ${item.minecraft_version}${item.resources_ready ? ' · 素材已安装' : ''}`,
-            item.minecraft_version,
-          ),
+        (item) => new Option(`Java ${item.minecraft_version}`, item.minecraft_version),
       ),
     );
     versionSelect.value = results[2].value.default;
@@ -311,7 +307,6 @@ async function loadHomeData() {
   }
   if (results[0].status === 'fulfilled') {
     info = results[0].value;
-    el('home-version').textContent = `JAVA ${info.minecraft_version}`;
     connection.replaceChildren();
     connection.append(
       document.createElement('i'),

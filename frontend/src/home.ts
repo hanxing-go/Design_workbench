@@ -334,7 +334,7 @@ async function loadHomeData() {
         ...versions.map(
           (item) =>
             new Option(
-              `Java ${item.minecraft_version}${item.resources_ready ? ' · 素材已安装' : ''}`,
+              `Java ${item.minecraft_version}`,
               item.minecraft_version,
             ),
         ),
@@ -359,7 +359,6 @@ async function loadHomeData() {
         );
         updateResourceStatus();
       }
-      el('home-version').textContent = `JAVA ${result.minecraft_version}`;
       connection.replaceChildren(
         document.createElement('i'),
         document.createTextNode(

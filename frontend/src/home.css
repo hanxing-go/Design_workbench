@@ -1465,3 +1465,49 @@ html:has(.home-mode) {
     transition: none !important;
   }
 }
+
+/* Bound the version popup instead of using the full-height system menu. */
+@supports (appearance: base-select) {
+  #home-minecraft-version,
+  #home-minecraft-version::picker(select) {
+    appearance: base-select;
+  }
+  #home-minecraft-version {
+    width: 100%;
+    color: #d6e1ca;
+    font: inherit;
+    font-size: 14px;
+    align-items: center;
+    cursor: pointer;
+  }
+  #home-minecraft-version::picker(select) {
+    top: anchor(bottom);
+    bottom: auto;
+    margin-top: 4px;
+    max-height: min(240px, 40dvh);
+    overflow-y: auto;
+    background: #1a2117;
+    color: #d6e1ca;
+    border: 1px solid #62774d;
+    box-shadow: 0 6px 18px #0006;
+    scrollbar-color: #62774d #1a2117;
+    scrollbar-width: thin;
+  }
+  #home-minecraft-version option {
+    min-height: 36px;
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+  #home-minecraft-version option:hover,
+  #home-minecraft-version option:focus {
+    background: #35472a;
+  }
+  #home-minecraft-version option:checked {
+    background: #40562e;
+    color: #e8f5da;
+  }
+}
+.home-mode #home-create-dialog {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}

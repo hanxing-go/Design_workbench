@@ -107,6 +107,25 @@ def test_version_selection_and_project_switching(tmp_path: Path) -> None:
                 expect(page.locator(".material-card").first).to_be_visible()
                 page.wait_for_function("window.workbench.viewer.pendingBuilds.size === 0")
                 page.screenshot(path=str(screenshots / f"java-{version}.png"))
+                capture = page.request.post(
+                    url + f"/api/projects/{identifier}/views",
+                    data={
+                        "expected_revision": 1,
+                        "request_id": "version-capture",
+                        "views": [{"name": "iso"}],
+                        "width": 256,
+                        "height": 256,
+                    },
+                    timeout=90000,
+                )
+                assert capture.ok, capture.text()
+                result = capture.json()
+                assert result["status"] == "succeeded", result
+                resources = page.request.get(url + "/api/info?project=" + identifier).json()
+                assert result["resource_hash"] == resources["resource_manifest"]["bundle_hash"]
+                assert (
+                    page.request.get(url + result["images"][0]["url"]).body().startswith(b"\x89PNG")
+                )
             for identifier, version in zip(identifiers, versions, strict=True):
                 page.locator("#projects").select_option(identifier)
                 expect(page.locator("#version")).to_have_text("Java " + version)

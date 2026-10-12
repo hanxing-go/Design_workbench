@@ -45,7 +45,7 @@ uv run --extra gui design-workbench serve --config config.example.toml
 以下命令拉取本文对应的 `codex/p6-ai-tools` 分支并完成首次安装：
 
 ```powershell
-git clone --branch codex/p6-ai-tools https://github.com/hanxing-go/Design_workbench.git
+git clone https://github.com/hanxing-go/Design_workbench.git
 cd Design_workbench
 uv sync --locked --extra gui
 npm.cmd ci --prefix frontend
@@ -72,10 +72,10 @@ uv run --extra gui --extra ai --extra render design-workbench mcp --config confi
 构建与验证：
 
 ```powershell
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
-uv run pytest -m "not e2e and not resources"
+uv run --extra gui --extra ai --extra render ruff check .
+uv run --extra gui --extra ai --extra render ruff format --check .
+uv run --extra gui --extra ai --extra render mypy
+uv run --extra gui --extra ai --extra render pytest -m "not e2e and not resources"
 npm.cmd run check --prefix frontend
 npm.cmd run build --prefix frontend
 uv build

@@ -4,13 +4,12 @@
 
 当前应用版本 0.1.0，默认 Minecraft Java 1.20.1；首页新建可选择其他支持版本并下载对应素材，见 [多版本支持](VERSION_SUPPORT.md)。P1–P5 工作台与 P6 外部 AI 工具已实现，阶段验收状态见 [实施路线](ROADMAP.md)。
 
-## 当前机器
+## 日常启动
 
-Python 环境和官方素材已经在项目中准备好：
+首次使用先完成下方的安装步骤；之后在项目根目录运行：
 
 ```powershell
-cd D:\Study\program\Design_workbench
-.\.venv\Scripts\design-workbench.exe serve --config config.example.toml
+uv run --extra gui design-workbench serve --config config.example.toml
 ```
 
 访问 <http://127.0.0.1:8765>。如果该服务已运行，直接打开页面；无需启动第二个相同端口的服务。Ctrl+C 关闭服务。
@@ -102,10 +101,10 @@ uv run --extra gui --extra ai --extra render design-workbench mcp --config confi
 ## 开发检查
 
 ```powershell
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
-uv run pytest -m "not e2e and not resources" -q
+uv run --extra gui --extra ai --extra render ruff check .
+uv run --extra gui --extra ai --extra render ruff format --check .
+uv run --extra gui --extra ai --extra render mypy
+uv run --extra gui --extra ai --extra render pytest -m "not e2e and not resources" -q
 npm.cmd run check --prefix frontend
 npm.cmd run build --prefix frontend
 uv build
@@ -116,7 +115,7 @@ uv run python scripts/install_smoke.py
 
 ```powershell
 uv run playwright install chromium
-uv run pytest -q
+uv run --extra gui --extra ai --extra render pytest -q
 ```
 
 本机已有 Chrome，可设 `$env:DW_BROWSER_CHANNEL='chrome'` 使用已安装浏览器。Linux Chromium 环境另需 `playwright install --with-deps chromium`。

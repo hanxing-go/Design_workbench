@@ -32,6 +32,8 @@ from .capture_worker import write_json
 
 LOGGER = logging.getLogger("design_workbench.render")
 TERMINAL = {"succeeded", "failed", "timed_out", "cancelled"}
+PROCESS_STOP_TIMEOUT = 10
+CLEANUP_GRACE = 2 * PROCESS_STOP_TIMEOUT + 3
 
 
 @dataclass
@@ -237,7 +239,9 @@ class RenderJobs:
 
                 job.future = self.executor.submit(run)
         if request.wait:
-            job.done.wait(min(request.timeout, self.settings.render_timeout) + 3)
+            # Windows taskkill and process reaping each have their own bounded wait.
+            # A synchronous timeout must allow cleanup to free the queue slot.
+            job.done.wait(min(request.timeout, self.settings.render_timeout) + CLEANUP_GRACE)
         return self.status(job.id)
 
     @staticmethod
@@ -249,13 +253,13 @@ class RenderJobs:
                 ["taskkill", "/PID", str(process.pid), "/T", "/F"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=10,
+                timeout=PROCESS_STOP_TIMEOUT,
                 check=False,
             )
         else:
             with suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGKILL)
-        process.wait(timeout=10)
+        process.wait(timeout=PROCESS_STOP_TIMEOUT)
 
     def status(self, identifier: str) -> dict[str, Any]:
         with self.lock:
@@ -310,7 +314,7 @@ class RenderJobs:
                     job.state = "cancelled"
                     job.finished = time.monotonic()
                     job.done.set()
-        job.done.wait(12)
+        job.done.wait(CLEANUP_GRACE)
         return self.status(identifier)
 
     def close(self) -> None:
@@ -329,7 +333,7 @@ class RenderJobs:
         """Windows can briefly retain child log handles after process termination."""
         if not directory.resolve().is_relative_to(self.directory.resolve()):
             raise ValueError("只能清理此截图服务拥有的临时目录")
-        deadline = time.monotonic() + 2
+        deadline = time.monotonic() + PROCESS_STOP_TIMEOUT
         while True:
             try:
                 shutil.rmtree(directory)

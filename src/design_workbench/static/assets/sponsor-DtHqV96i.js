@@ -1,4 +1,8 @@
+<<<<<<<< HEAD:src/design_workbench/static/assets/sponsor-DtHqV96i.js
 import{i as g,h as b}from"./minecraftUI-Cl_zRL2Y.js";/* empty css             */const v=`<div class="home-topline" aria-hidden="true"></div>
+========
+/* empty css              */import{h as m}from"./homeIcons-TEDqZ-z5.js";const u=`<div class="home-topline" aria-hidden="true"></div>
+>>>>>>>> codex/multi-version:src/design_workbench/static/assets/sponsor-DCXL7a4d.js
 <header class="home-header">
   <a class="brand home-brand" href="/" aria-label="Design Workbench 首页"
     ><span class="brand-mark" data-icon="grass" aria-hidden="true"></span

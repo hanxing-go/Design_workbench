@@ -66,3 +66,5 @@ uv run --extra gui --extra ai --extra render pytest tests/e2e/test_version_ui.py
 资源审计逐状态检查支持分类，并构建每个方块的默认模型；结果含资源哈希和注册表来源，保存于 `artifacts/version-audit.json`。游戏素材和这些本地产物不提交到 Git。
 
 新增发行版本需要从固定上游提交生成注册表，例如 `python scripts/fetch_registry.py --version 1.21.4 --commit <完整提交哈希>`；再完成对应官方资源审计、模型适配、蓝图往返和浏览器验证后加入发行范围。程序从打包的 `registry-*.json` 列举支持版本，未来 MC 更新不会未经验证自动启用。
+
+逐版本状态数、实际验证和修复记录见 [多版本验证记录](VERSION_ACCEPTANCE.md)。

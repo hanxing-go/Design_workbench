@@ -18,10 +18,10 @@ Python 3.12、uv、Node.js 22+：
 ```powershell
 uv sync --locked --extra gui
 npm.cmd ci --prefix frontend
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
-uv run pytest -m "not e2e and not resources" -q
+uv run --extra gui --extra ai --extra render ruff check .
+uv run --extra gui --extra ai --extra render ruff format --check .
+uv run --extra gui --extra ai --extra render mypy
+uv run --extra gui --extra ai --extra render pytest -m "not e2e and not resources" -q
 npm.cmd run check --prefix frontend
 npm.cmd run build --prefix frontend
 uv build

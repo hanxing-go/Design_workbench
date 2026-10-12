@@ -69,7 +69,12 @@ def test_version_selection_and_project_switching(tmp_path: Path) -> None:
                 screenshots.mkdir(parents=True, exist_ok=True)
                 page.screenshot(path=str(screenshots / "version-selection.png"))
                 page.locator("#home-create-submit").click()
-                page.wait_for_url("**/?project=*")
+                try:
+                    page.wait_for_url("**/?project=*")
+                except Exception as error:
+                    raise AssertionError(
+                        f"{version}: {page.locator('#home-create-error').inner_text()}; errors={errors}"
+                    ) from error
                 page.wait_for_function("window.workbench?.summary && !window.workbench.busy")
                 expect(page.locator("#version")).to_have_text("Java " + version)
                 identifier = page.evaluate("window.workbench.project")

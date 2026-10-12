@@ -1,8 +1,10 @@
 import hashlib
 import json
 import math
+import os
 import shutil
 import stat
+import time
 import uuid
 import zipfile
 from functools import lru_cache
@@ -13,8 +15,21 @@ from design_workbench.domain.errors import WorkbenchError
 from design_workbench.domain.models import BlockState
 
 from .atlas import RECIPE_VERSION, build_atlas
+from .catalog import Catalog
 from .geometry import DIRECTIONS, default_uv, face_uv, projected_uv, quads, rotate
 from .special import special_geometry
+
+
+def publish_directory(temporary: Path, destination: Path) -> None:
+    """Windows scanners can briefly hold newly extracted resource directories."""
+    for attempt in range(10):
+        try:
+            temporary.rename(destination)
+            return
+        except PermissionError as error:
+            if os.name != "nt" or error.winerror not in {5, 32, 33} or attempt == 9:
+                raise
+            time.sleep(0.1 * (attempt + 1))
 
 
 def resource_name(value: str) -> tuple[str, str]:
@@ -101,14 +116,22 @@ class ResourcePack:
         return [item[0] if isinstance(item, list) else item for item in applications]
 
     def texture(self, reference: str, model: dict[str, Any]) -> str:
+        # Some official models (e.g. 1.21 heavy_core) use a bare texture variable.
+        if reference in model.get("textures", {}):
+            reference = "#" + reference
         for _ in range(32):
             if not reference.startswith("#"):
                 namespace, path = resource_name(reference)
                 key = f"{namespace}:{path}"
+                # Newer clients moved the pole/bar sheet into the banner directory.
+                if key == "minecraft:entity/banner_base" and key not in self.atlas["uv"]:
+                    key = "minecraft:entity/banner/banner_base"
                 if key not in self.atlas["uv"]:
                     raise WorkbenchError("MISSING_TEXTURE", f"图集缺少 {key}。")
                 return key
             value = model.get("textures", {}).get(reference[1:])
+            if isinstance(value, dict):
+                value = value.get("sprite")
             if not isinstance(value, str):
                 raise WorkbenchError("MISSING_TEXTURE", f"无法解析贴图 {reference}。")
             reference = value
@@ -129,7 +152,10 @@ class ResourcePack:
             if special is not None:
                 for face in special["faces"]:
                     self.texture(face["texture"], {})
-                return {"status": "static", "reason": "专用静态预览；不执行游戏物理"}
+                return {
+                    "status": "static",
+                    "reason": special.get("preview_note", "专用静态预览；不执行游戏物理"),
+                }
             applications = self.applications(state)
             if not applications:
                 return {"status": "invisible", "reason": "当前状态的组合模型为空"}
@@ -137,7 +163,7 @@ class ResourcePack:
             if any(model.get("special") for model in models) or not any(
                 model.get("elements") for model in models
             ):
-                return {"status": "special", "reason": "需要专用渲染；数据保留"}
+                return {"status": "special", "reason": "暂不支持预览；方块状态可保存"}
             for model in models:
                 for element in model.get("elements", []):
                     for face in element.get("faces", {}).values():
@@ -152,12 +178,20 @@ class ResourcePack:
             return {**support, "faces": [], "opaque_cube": False}
         special = special_geometry(state)
         if special is not None:
+            special["faces"] = [
+                {**face, "texture": self.texture(face["texture"], {})} for face in special["faces"]
+            ]
             return {**support, **special}
         faces: list[dict[str, Any]] = []
+        forced_translucent = False
         applications = self.applications(state)
         cube = False
         for application in applications:
             model = self.model(application["model"])
+            forced_translucent |= any(
+                isinstance(value, dict) and bool(value.get("force_translucent"))
+                for value in model.get("textures", {}).values()
+            )
             for element in model.get("elements", []):
                 vertices = quads(element["from"], element["to"])
                 cube = cube or (
@@ -238,7 +272,8 @@ class ResourcePack:
             "faces": faces,
             "opaque_cube": cube and len(applications) == 1,
             "render_layer": "translucent"
-            if "stained_glass" in state.name
+            if forced_translucent
+            or "stained_glass" in state.name
             or state.name in {"minecraft:ice", "minecraft:slime_block", "minecraft:honey_block"}
             else "cutout",
         }
@@ -247,6 +282,23 @@ class ResourcePack:
 class ResourceManager:
     def __init__(self, directory: Path) -> None:
         self.directory = directory
+
+    def available(self, version: str) -> bool:
+        """Check installation metadata without loading or upgrading every resource pack."""
+        pointer = self.directory / version / "current.json"
+        if not pointer.is_file():
+            return False
+        data = json.loads(pointer.read_text(encoding="utf-8"))
+        path = (pointer.parent / data["directory"]).resolve()
+        if not path.is_relative_to(pointer.parent.resolve()):
+            raise WorkbenchError("RESOURCE_PATH", "资源目录超出配置范围。")
+        manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+        return bool(
+            manifest.get("minecraft_version") == version
+            and manifest.get("data_version") == Catalog(version).data_version
+            and (path / "atlas.png").is_file()
+            and (path / "assets").is_dir()
+        )
 
     def active(self, version: str) -> ResourcePack | None:
         pointer = self.directory / version / "current.json"
@@ -257,6 +309,12 @@ class ResourceManager:
         if not path.is_relative_to(pointer.parent.resolve()):
             raise WorkbenchError("RESOURCE_PATH", "资源目录超出配置范围。")
         manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+        catalog = Catalog(version)
+        if (
+            manifest.get("minecraft_version") != version
+            or manifest.get("data_version") != catalog.data_version
+        ):
+            raise WorkbenchError("VERSION_MISMATCH", "资源包版本与注册表不一致。", "resources")
         if manifest.get("recipe_version", 1) < RECIPE_VERSION:
             # Upgrade only derived resources. The user's projects and source assets stay intact.
             bundle_hash = hashlib.sha256(
@@ -281,7 +339,7 @@ class ResourceManager:
                         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
                     )
                     try:
-                        temporary.rename(destination)
+                        publish_directory(temporary, destination)
                     except FileExistsError:
                         if not (destination / "manifest.json").is_file():
                             raise
@@ -305,6 +363,7 @@ class ResourceManager:
         language: Path | None = None,
         source: dict[str, Any] | None = None,
     ) -> ResourcePack:
+        catalog = Catalog(version)
         jar_hash = hashlib.sha256(jar.read_bytes()).hexdigest()
         language_data = language.read_bytes() if language and language.is_file() else b"{}"
         bundle_hash = hashlib.sha256(
@@ -321,7 +380,10 @@ class ResourceManager:
             try:
                 with zipfile.ZipFile(jar) as archive:
                     jar_version = json.loads(archive.read("version.json"))
-                    if jar_version["id"] != version:
+                    if (
+                        jar_version["id"] != version
+                        or jar_version["world_version"] != catalog.data_version
+                    ):
                         raise WorkbenchError(
                             "VERSION_MISMATCH", f"客户端是 {jar_version['id']}，目标为 {version}。"
                         )
@@ -361,7 +423,7 @@ class ResourceManager:
                     json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
                 try:
-                    temporary.rename(destination)
+                    publish_directory(temporary, destination)
                 except FileExistsError:
                     if not (destination / "manifest.json").is_file():
                         raise

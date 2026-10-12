@@ -2,7 +2,7 @@
 
 外部 AI 的持久任务、预算、取消恢复、用户确认改稿和候选稿，在编辑器顶部“AI 任务”中使用；创建任务后将编号交给正在使用的 AI。完整 CLI/MCP 接入与用量边界见 [AI 任务控制](AI_CONTROLS.md)。
 
-当前应用版本 0.1.0，Minecraft Java 1.20.1。P1–P5 工作台与 P6 外部 AI 工具已实现，阶段验收状态见 [实施路线](ROADMAP.md)。
+当前应用版本 0.1.0，默认 Minecraft Java 1.20.1；首页新建可选择其他支持版本并下载对应素材，见 [多版本支持](VERSION_SUPPORT.md)。P1–P5 工作台与 P6 外部 AI 工具已实现，阶段验收状态见 [实施路线](ROADMAP.md)。
 
 ## 当前机器
 
@@ -48,8 +48,8 @@ uv sync --locked --extra gui
 npm.cmd ci --prefix frontend
 npm.cmd run check --prefix frontend
 npm.cmd run build --prefix frontend
-uv run design-workbench resources setup --config config.example.toml
-uv run design-workbench serve --config config.example.toml
+uv run --extra gui design-workbench resources setup --config config.example.toml
+uv run --extra gui design-workbench serve --config config.example.toml
 ```
 
 Linux 使用 `npm`。官方素材获取需要网络，成功导入后设计与预览可以在本地运行。
@@ -57,10 +57,10 @@ Linux 使用 `npm`。官方素材获取需要网络，成功导入后设计与�
 有本地官方客户端和中文语言文件时：
 
 ```powershell
-uv run design-workbench resources setup --config config.example.toml --jar "D:\Minecraft\1.20.1.jar" --language "D:\Minecraft\zh_cn.json"
+uv run --extra gui design-workbench resources setup --config config.example.toml --jar "D:\Minecraft\1.20.1.jar" --language "D:\Minecraft\zh_cn.json"
 ```
 
-客户端 `version.json` 必须与基线一致；1.21 的客户端不能作为 1.20.1 资源包导入。资源导入后重启服务。配置文件中相对路径以该文件所在目录为基准。
+客户端 `version.json` 必须与所选版本一致；例如使用 `--minecraft-version 1.21.4` 导入 1.21.4 客户端。不同版本的素材独立保存。服务可识别首次资源安装，刷新页面即可。配置文件中相对路径以该文件所在目录为基准。
 
 ## 使用 wheel
 
@@ -93,8 +93,8 @@ P6 采用 CLI 优先：`design-workbench tools --config config.example.toml` 输
 
 ```powershell
 uv sync --locked --extra gui --extra ai --extra render
-uv run python -m playwright install chromium
-uv run design-workbench mcp --config config.example.toml
+uv run --extra gui --extra ai --extra render python -m playwright install chromium
+uv run --extra gui --extra ai --extra render design-workbench mcp --config config.example.toml
 ```
 
 已有 Chrome 时也可在 TOML 设置 `browser_channel = "chrome"`，或使用 `DW_BROWSER_CHANNEL=chrome`。查询/编辑不需要启动浏览器。完整 JSON、工具列表、截图任务与预算见 [P6 使用指南](P6_USAGE.md)，实际外部 AI 流程见 [验收记录](P6_ACCEPTANCE.md)。平台内自主模型调用尚未实现。

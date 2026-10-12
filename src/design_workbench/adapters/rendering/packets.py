@@ -50,7 +50,7 @@ def render_chunk(
         geometry = None
         if point in texts and state.name.endswith("_sign"):
             geometry = {**pack.geometry(state), "texts": texts[point]}
-        elif state.name in {"minecraft:water", "minecraft:lava"}:
+        elif state.name in {"minecraft:water", "minecraft:lava", "minecraft:bubble_column"}:
             geometry = fluid_model(scene, point, state, catalog)
         identifier = (
             hashlib.sha256(

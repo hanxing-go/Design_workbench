@@ -13,7 +13,7 @@
   <div class="home-header-actions">
     <span class="home-version"><i></i> OPEN SOURCE · MIT</span
     ><a href="?view=workbench" class="home-workbench-link"
-      >进入工作台 <span aria-hidden="true">↗</span></a
+      >进入工作台 <span aria-hidden="true">→</span></a
     >
   </div>
 </header>
@@ -49,17 +49,49 @@
         感谢每一份支持
       </p>
     </div>
-    <div class="sponsor-art" aria-hidden="true">
+    <div class="sponsor-art">
+      <img
+        class="sponsor-steve"
+        src="__STEVE_PICKAXE_URL__"
+        width="600"
+        height="800"
+        alt="史蒂夫手持铁镐，陪伴社区宝箱"
+        draggable="false"
+        decoding="async"
+      />
       <div class="sponsor-art-grid"></div>
       <span class="sponsor-art-label">COMMUNITY CHEST <span>01 / ∞</span></span
       ><span class="sponsor-spark spark-a">✦</span><span class="sponsor-spark spark-b">+</span
       ><span class="sponsor-spark spark-c">✦</span>
       <div class="sponsor-glow"></div>
-      <span class="sponsor-diamond-large" data-icon="diamond"></span
-      ><span class="sponsor-gem gem-one" data-icon="emerald"></span
-      ><span class="sponsor-gem gem-two" data-icon="diamond"></span
-      ><span class="sponsor-gem gem-three" data-icon="emerald"></span
-      ><span class="sponsor-chest-large" data-icon="chest"></span>
+      <span aria-hidden="true" class="sponsor-diamond-large" data-icon="diamond"></span
+      ><span aria-hidden="true" class="sponsor-gem gem-one" data-icon="emerald"></span
+      ><span aria-hidden="true" class="sponsor-gem gem-two" data-icon="diamond"></span
+      ><span aria-hidden="true" class="sponsor-gem gem-three" data-icon="emerald"></span
+      ><button
+        type="button"
+        class="community-chest"
+        id="community-chest"
+        aria-label="打开社区宝箱"
+        aria-pressed="false"
+        title="悬停开盖，点击保持打开；再次点击合上"
+      >
+        <span class="chest-aura" aria-hidden="true"></span>
+        <span class="chest-model" aria-hidden="true">
+          <span class="chest-base"
+            ><span class="chest-face chest-front"></span><span class="chest-face chest-side"></span
+            ><span class="chest-inside"></span
+          ></span>
+          <span class="chest-lid"
+            ><span class="chest-face chest-front"></span><span class="chest-face chest-side"></span
+            ><span class="chest-top"></span><span class="chest-under"></span
+            ><span class="chest-lock"></span
+          ></span>
+        </span>
+        <span class="chest-particles" aria-hidden="true"
+          ><i></i><i></i><i></i><i></i><i></i><i></i
+        ></span>
+      </button>
       <div class="sponsor-art-shadow"></div>
       <div class="sponsor-art-caption">
         <span>每一份心意，都是珍贵的宝藏。</span><small>THANK YOU, BUILDER!</small>

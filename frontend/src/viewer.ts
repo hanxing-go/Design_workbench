@@ -6,7 +6,14 @@ import { addSignText, disposeChunk } from './signText';
 import { Transparency, type TextPart } from './transparency';
 import type { Atlas, Face, Model, Packet, Point, RenderCell, Selection } from './types';
 
-type Hit = { position: Point; normal: Point; group: string; protected: boolean; ground: boolean };
+type Hit = {
+  position: Point;
+  normal: Point;
+  location: Point;
+  group: string;
+  protected: boolean;
+  ground: boolean;
+};
 const key = (p: readonly number[]) => p.join(',');
 
 export class Viewer {
@@ -23,6 +30,7 @@ export class Viewer {
   versions: Record<string, string> = {};
   atlas!: Atlas;
   texture!: THREE.Texture;
+  atlasUrl = '/api/atlas.png';
   material!: THREE.MeshLambertMaterial;
   translucent!: THREE.MeshLambertMaterial;
   emissive!: THREE.MeshBasicMaterial;
@@ -108,7 +116,7 @@ export class Viewer {
   }
 
   async initializeTexture() {
-    this.texture = await this.loadTexture('/api/atlas.png');
+    this.texture = await this.loadTexture(this.atlasUrl);
     this.material = new THREE.MeshLambertMaterial({
       map: this.texture,
       alphaTest: 0.1,
@@ -143,7 +151,10 @@ export class Viewer {
 
   private async refreshTexture(hash: string) {
     const texture = await this.loadTexture(
-      '/api/atlas.png?resource_hash=' + encodeURIComponent(hash),
+      this.atlasUrl +
+        (this.atlasUrl.includes('?') ? '&' : '?') +
+        'resource_hash=' +
+        encodeURIComponent(hash),
     );
     // A newer resource packet can arrive before the image finishes loading.
     if (hash !== this.resourceHash) {
@@ -390,9 +401,9 @@ export class Viewer {
           if (!neighbour || neighbour[1] > this.layer) return '1';
           const adjacent = this.models.get(neighbour[3]);
           return adjacent?.opaque_cube ||
-            ((model.name.includes('glass') ||
-              model.name === 'minecraft:water' ||
-              model.name === 'minecraft:lava') &&
+            (['minecraft:water', 'minecraft:bubble_column'].includes(model.name) &&
+              ['minecraft:water', 'minecraft:bubble_column'].includes(adjacent?.name ?? '')) ||
+            ((model.name.includes('glass') || model.name === 'minecraft:lava') &&
               adjacent?.name === model.name)
             ? '0'
             : '1';
@@ -624,6 +635,17 @@ export class Viewer {
     return this.pickRay(new THREE.Vector2(0, 0), this.walkReach);
   }
 
+  placementFacing(): 'north' | 'east' | 'south' | 'west' {
+    const direction = this.camera.getWorldDirection(new THREE.Vector3());
+    return Math.abs(direction.x) > Math.abs(direction.z)
+      ? direction.x > 0
+        ? 'east'
+        : 'west'
+      : direction.z > 0
+        ? 'south'
+        : 'north';
+  }
+
   private pickRay(screen: THREE.Vector2, distance = Infinity): Hit | null {
     if (this.building) return null;
     this.camera.updateMatrixWorld();
@@ -653,6 +675,7 @@ export class Viewer {
       return {
         position: [cell[0], cell[1], cell[2]],
         normal,
+        location: [hit.point.x - cell[0], hit.point.y - cell[1], hit.point.z - cell[2]],
         group: cell[4],
         protected: cell[5],
         ground: false,
@@ -666,6 +689,7 @@ export class Viewer {
       ? {
           position: [Math.floor(point.x), -1, Math.floor(point.z)],
           normal: [0, 1, 0],
+          location: [point.x - Math.floor(point.x), 1, point.z - Math.floor(point.z)],
           group: 'main',
           protected: false,
           ground: true,
@@ -698,8 +722,20 @@ export class Viewer {
     const geometry = this.geometry(id, model.faces, '1'.repeat(model.faces.length));
     temporary.add(new THREE.Mesh(geometry, this.materialFor(model)));
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
-    camera.position.set(2.4, 1.9, 2.6);
-    camera.lookAt(0.5, 0.5, 0.5);
+    geometry.computeBoundingBox();
+    const bounds = geometry
+      .boundingBox!.clone()
+      .union(new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 1, 1)));
+    const center = bounds.getCenter(new THREE.Vector3());
+    const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+    const radius = Math.max(0.05, sphere.radius);
+    const distance = (radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.15;
+    camera.position
+      .copy(center)
+      .add(new THREE.Vector3(1.9, 1.4, 2.1).normalize().multiplyScalar(distance));
+    camera.far = Math.max(20, distance + radius * 2);
+    camera.updateProjectionMatrix();
+    camera.lookAt(center);
     renderer.setSize(size, size, false);
     renderer.render(temporary, camera);
     const image = renderer.domElement.toDataURL('image/png');

@@ -37,6 +37,9 @@ dev = [
   "litemapy==0.11.0b0",
   "mcp>=1.20,<2",
 ]
+packaging = [
+    "pyinstaller==6.16.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/design_workbench"]

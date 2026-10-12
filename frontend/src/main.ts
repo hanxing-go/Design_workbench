@@ -1,13 +1,18 @@
 import './style.css';
 import shell from './shell.html?raw';
+import { hydrateHomeIcons } from './homeIcons';
+import { initMinecraftUI } from './minecraftUI';
 import type { Material, Model, Packet, Point, Selection, State, Summary } from './types';
 import { Viewer } from './viewer';
 import { LayerPlayer } from './layerPlayer';
 import { typing } from './walkControls';
 import { DesignPanel } from './designPanel';
+import { MaterialControls } from './materialControls';
 
 const root = document.querySelector<HTMLDivElement>('#app')!;
 root.innerHTML = shell;
+hydrateHomeIcons(root);
+initMinecraftUI();
 document.title = 'Design Workbench · 建筑设计';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -27,6 +32,9 @@ function message(text: string, error = false) {
   feedbackTimer = window.setTimeout(() => (feedback.hidden = true), error ? 8000 : 3500);
 }
 async function api<T>(path: string, body?: unknown, method?: string): Promise<T> {
+  if (project && /^\/api\/(catalog|material\/)/.test(path)) {
+    path += (path.includes('?') ? '&' : '?') + 'project=' + encodeURIComponent(project);
+  }
   const response = await fetch(path, {
     method: method ?? (body === undefined ? 'GET' : 'POST'),
     headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
@@ -52,9 +60,39 @@ let previewBody: Record<string, unknown> | null = null,
   previous: Packet | null = null,
   latest: Packet | null = null;
 let ruleProposals: unknown[] = [];
+let ruleRevision = -1;
+const materialControls = new MaterialControls(
+  el('properties'),
+  (state) => {
+    currentState = state;
+    clearPreview();
+    void updateMaterialHud().catch((error) => message(String(error), true));
+  },
+  async (state) => {
+    const activeProject = project;
+    const activeResources = latest?.resource_hash;
+    const query = new URLSearchParams({ properties: JSON.stringify(state.properties) });
+    const model = await api<Model & { atlas: Packet['atlas'] }>(
+      `/api/material/${state.name.split(':')[1]}?${query}`,
+    );
+    if (activeProject !== project || activeResources !== latest?.resource_hash)
+      throw new Error('材料预览请求已过期');
+    viewer.atlas = model.atlas;
+    return viewer.thumbnail(model, 96);
+  },
+);
 const params = new URLSearchParams(location.search);
 const setBusy = (value: boolean) => {
   busy = value;
+  el('properties').inert = value;
+  el<HTMLInputElement>('search').disabled = value;
+  el<HTMLSelectElement>('category').disabled = value;
+  el<HTMLSelectElement>('projects').disabled = value;
+  el('materials')
+    .querySelectorAll<HTMLButtonElement>('.material-card')
+    .forEach((card) => {
+      card.disabled = value;
+    });
   el<HTMLButtonElement>('commit').disabled = value;
   el<HTMLButtonElement>('preview').disabled = value;
   el<HTMLButtonElement>('rename-submit').disabled = value;
@@ -313,6 +351,14 @@ async function loadProjects(preferred?: string) {
   project = preferred ?? project ?? '';
   if (!data.items.some((item) => item.project_id === project)) project = data.items[0].project_id;
   projectsSelect.value = project;
+  const info = await api<{ minecraft_version: string; resources_ready: boolean }>(
+    `/api/info?project=${encodeURIComponent(project)}`,
+  );
+  el('version').textContent = `Java ${info.minecraft_version}`;
+  if (!info.resources_ready)
+    throw new Error(`Java ${info.minecraft_version} 素材尚未安装，请回到首页下载此版本素材。`);
+  viewer.atlasUrl = `/api/atlas.png?project=${encodeURIComponent(project)}`;
+  if (!viewer.texture) await viewer.initializeTexture();
   viewer.fitted = false;
   viewer.layer = Infinity;
   previous = null;
@@ -320,6 +366,12 @@ async function loadProjects(preferred?: string) {
   select(null);
   clearPreview();
   await refresh(true);
+  page = 0;
+  material = null;
+  currentState = { name: 'minecraft:oak_planks', properties: {} };
+  await loadCatalog();
+  const defaultMaterial = await api<{ items: Material[] }>('/api/catalog?query=oak_planks&limit=1');
+  if (defaultMaterial.items[0]) await chooseMaterial(defaultMaterial.items[0]);
   history.replaceState({}, '', `?project=${project}`);
   await designPanel.load();
   try {
@@ -351,6 +403,7 @@ async function loadCatalog() {
   for (const item of data.items) {
     const button = document.createElement('button');
     button.className = 'material-card';
+    button.disabled = true;
     button.dataset.name = item.name;
     button.setAttribute('aria-label', item.chinese_name);
     const image = document.createElement('img');
@@ -360,9 +413,10 @@ async function loadCatalog() {
     const name = document.createElement('span');
     name.textContent = item.chinese_name;
     const badge = document.createElement('small');
-    badge.textContent = { static: '', special: '特殊', invisible: '不可见', missing: '缺资源' }[
+    badge.textContent = { static: '', special: '暂无预览', invisible: '不可见', missing: '缺资源' }[
       item.support.status
     ];
+    button.title = `${item.chinese_name} · ${item.support.reason}`;
     button.append(image, name, badge);
     button.onclick = () => void safely(async () => chooseMaterial(item));
     el('materials').append(button);
@@ -372,7 +426,13 @@ async function loadCatalog() {
       );
       viewer.atlas = model.atlas;
       image.src = viewer.thumbnail(model, 72);
-    } else image.remove();
+    } else {
+      const placeholder = document.createElement('span');
+      placeholder.className = 'material-placeholder';
+      placeholder.setAttribute('aria-hidden', 'true');
+      placeholder.textContent = item.support.status === 'invisible' ? '◇' : '▧';
+      image.replaceWith(placeholder);
+    }
   }
   el('materials')
     .querySelectorAll<HTMLElement>('.material-card')
@@ -384,22 +444,7 @@ async function chooseMaterial(item: Material) {
   el('material-name').textContent = item.chinese_name;
   el('material-id').textContent = item.name;
   el('material-support').textContent = item.support.reason;
-  el('properties').replaceChildren(
-    ...Object.entries(item.properties).map(([name, values]) => {
-      const label = document.createElement('label');
-      label.textContent = name;
-      const select = document.createElement('select');
-      select.dataset.property = name;
-      select.replaceChildren(...values.map((value) => new Option(value, value)));
-      select.value = currentState.properties[name];
-      select.onchange = () => {
-        currentState.properties[name] = select.value;
-        void updateMaterialHud().catch((error) => message(String(error), true));
-      };
-      label.append(select);
-      return label;
-    }),
-  );
+  materialControls.show(item, currentState);
   el('materials')
     .querySelectorAll<HTMLElement>('.material-card')
     .forEach((card) => card.classList.toggle('chosen', card.dataset.name === item.name));
@@ -409,6 +454,8 @@ async function chooseMaterial(item: Material) {
 let materialHudRequest = 0;
 async function updateMaterialHud() {
   const request = ++materialHudRequest;
+  const activeProject = project;
+  const activeResources = latest?.resource_hash;
   el('walk-material-name').textContent = material?.chinese_name ?? currentState.name;
   const propertyLabels: Record<string, Record<string, string>> = {
     facing: { north: '朝北', south: '朝南', west: '朝西', east: '朝东', up: '朝上', down: '朝下' },
@@ -427,7 +474,12 @@ async function updateMaterialHud() {
   const model = await api<Model & { atlas: Packet['atlas'] }>(
     `/api/material/${currentState.name.split(':')[1]}?${query}`,
   );
-  if (request !== materialHudRequest) return;
+  if (
+    request !== materialHudRequest ||
+    activeProject !== project ||
+    activeResources !== latest?.resource_hash
+  )
+    return;
   viewer.atlas = model.atlas;
   image.src = viewer.thumbnail(model, 72);
   image.hidden = false;
@@ -539,12 +591,23 @@ function operation(): Record<string, unknown> {
       throw new Error('请选择设计工具');
   }
 }
-function request(operations: unknown[]) {
+function request(operations: unknown[], options: { auto_connect?: boolean } = {}) {
   if (!project || !summary) throw new Error('请先选择项目');
-  return { expected_revision: summary.revision, request_id: crypto.randomUUID(), operations };
+  const usesMaterial = operations.some((operation) =>
+    ['place', 'set', 'fill', 'replace', 'extrude', 'arc', 'roof', 'window'].includes(
+      (operation as { op: string }).op,
+    ),
+  );
+  return {
+    expected_revision: summary.revision,
+    request_id: crypto.randomUUID(),
+    auto_connect: usesMaterial ? materialControls.automatic : true,
+    operations,
+    ...options,
+  };
 }
-async function preview(operations?: unknown[]) {
-  const body = request(operations ?? [operation()]);
+async function preview(operations?: unknown[], options: { auto_connect?: boolean } = {}) {
+  const body = request(operations ?? [operation()], options);
   const result = await api<{
     changed: number;
     changes: { position: Point; after: unknown }[];
@@ -601,15 +664,16 @@ viewer.onHit = (hit, event) =>
         hit.protected ? '此格包含保留的实体内容；当前只能查看' : `选中 ${position.join(',')}`,
       );
     } else if (action === 'place') {
-      const target = hit.position.map((v, i) => v + hit.normal[i]) as Point;
-      if (viewer.walk.active && viewer.occupied().has(target.join(','))) {
-        throw new Error('放置目标已有方块，请先删除或选择空格');
-      }
       await commit([
         {
-          op: 'set',
-          complete_beds: currentState.name.endsWith('_bed'),
-          blocks: [{ position: target, state: currentState, group: input('result-group') }],
+          op: 'place',
+          hit: hit.position,
+          normal: hit.normal,
+          location: hit.location,
+          facing: viewer.placementFacing(),
+          automatic: materialControls.automatic,
+          state: currentState,
+          group: input('result-group'),
         },
       ]);
     } else if (!hit.ground) {
@@ -753,7 +817,10 @@ document.addEventListener('visibilitychange', () => {
 bind('new-project', async () => {
   const name = prompt('建筑名称', '新建筑');
   if (!name) return;
-  const created = await api<{ project_id: string }>('/api/projects', { name });
+  const created = await api<{ project_id: string }>('/api/projects', {
+    name,
+    minecraft_version: summary?.minecraft_version,
+  });
   await loadProjects(created.project_id);
   message('新项目已创建');
 });
@@ -885,15 +952,36 @@ bind('export', async () => {
   message('蓝图已导出，方块状态与保留内容已写入');
 });
 bind('check', async () => {
-  const result = await api<{ issues: unknown[]; proposals: unknown[]; limitations: string[] }>(
-    endpoint('/consistency'),
-  );
+  const result = await api<{
+    revision: number;
+    issues: { position: Point; message: string }[];
+    proposals: unknown[];
+    limitations: string[];
+  }>(endpoint('/consistency'));
   ruleProposals = result.proposals;
+  ruleRevision = result.revision;
   el('check-result').textContent =
-    `${result.issues.length} 个部件问题，${result.proposals.length} 个连接建议。${result.limitations.join('；')}`;
+    `${result.issues.length} 个部件问题，${result.proposals.length} 个连接或补全建议。${result.limitations.join('；')}`;
   el('apply-rules').hidden = !result.proposals.length;
+  const issues = el('check-issues');
+  issues.hidden = !result.issues.length;
+  issues.replaceChildren(
+    ...result.issues.slice(0, 100).map((issue) => {
+      const item = document.createElement('li');
+      item.textContent = `${issue.position.join(', ')}：${issue.message}`;
+      return item;
+    }),
+  );
+  if (result.issues.length > 100) {
+    const item = document.createElement('li');
+    item.textContent = `其余 ${result.issues.length - 100} 个问题可通过接口查看。`;
+    issues.append(item);
+  }
 });
-bind('apply-rules', () => preview([{ op: 'set', blocks: ruleProposals }]));
+bind('apply-rules', async () => {
+  if (ruleRevision !== summary?.revision) throw new Error('设计已修改，请重新检查连接后再预览修复');
+  await preview([{ op: 'set', blocks: ruleProposals }], { auto_connect: true });
+});
 async function createCabin() {
   await commit([
     {
@@ -1044,15 +1132,7 @@ Object.defineProperty(window, 'workbench', {
 });
 fields();
 void safely(async () => {
-  const info = await api<{ minecraft_version: string; resources_ready: boolean }>('/api/info');
-  el('version').textContent = `Java ${info.minecraft_version}`;
-  if (!info.resources_ready)
-    throw new Error('尚未配置素材。先运行 design-workbench resources setup，再重启服务。');
-  await viewer.initializeTexture();
   await loadProjects(params.get('project') ?? undefined);
-  await loadCatalog();
-  const data = await api<{ items: Material[] }>('/api/catalog?query=oak_planks&limit=1');
-  if (data.items[0]) await chooseMaterial(data.items[0]);
   message('工作台就绪 · 所有修改自动保存');
   if (params.get('starter') === 'cabin' && summary?.blocks === 0 && summary.revision === 0)
     await createCabin();

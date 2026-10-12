@@ -1,0 +1,238 @@
+.sponsor-steve {
+  position: absolute;
+  right: 0;
+  bottom: 70px;
+  width: clamp(112px, 11vw, 158px);
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+  z-index: 3;
+  filter: drop-shadow(6px 10px 4px #0c140c66);
+}
+.community-chest {
+  position: absolute;
+  top: 65px;
+  left: calc(50% - 125px);
+  width: 250px;
+  height: 240px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  perspective: 900px;
+  -webkit-tap-highlight-color: transparent;
+}
+.home-mode .community-chest:is(:hover, :active) {
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+.community-chest:focus-visible {
+  outline-offset: -12px;
+}
+.chest-model {
+  position: absolute;
+  width: 140px;
+  height: 100px;
+  left: calc(50% - 70px);
+  top: 108px;
+  transform-style: preserve-3d;
+  transform: rotateX(-30deg) rotateY(-45deg) scale(0.9);
+}
+.chest-base,
+.chest-lid {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform-style: preserve-3d;
+}
+.chest-lid {
+  height: 50px;
+  top: -40px;
+  transform-origin: 50% 100% -70px;
+  transition: transform 650ms cubic-bezier(0.22, 0.8, 0.25, 1);
+}
+.chest-face,
+.chest-top,
+.chest-inside,
+.chest-under {
+  position: absolute;
+  display: block;
+  width: 140px;
+  height: 100%;
+  left: 0;
+  top: 0;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  backface-visibility: hidden;
+}
+.chest-front {
+  transform: translateZ(70px);
+}
+.chest-side {
+  transform: rotateY(90deg) translateZ(70px);
+  filter: brightness(0.68);
+}
+.chest-base .chest-front {
+  background-image: url('/api/ui/sprites/chest_front.png');
+}
+.chest-base .chest-side {
+  background-image: url('/api/ui/sprites/chest_side.png');
+}
+.chest-lid .chest-front {
+  background-image: url('/api/ui/sprites/chest_lid_front.png');
+}
+.chest-lid .chest-side {
+  background-image: url('/api/ui/sprites/chest_lid_side.png');
+}
+.chest-top {
+  height: 140px;
+  top: 0;
+  transform-origin: top;
+  transform: translateZ(-70px) rotateX(90deg);
+  background-image: url('/api/ui/sprites/chest_top.png');
+  filter: brightness(1.12);
+}
+.chest-inside {
+  height: 140px;
+  top: 0;
+  transform-origin: top;
+  transform: translateZ(-70px) rotateX(90deg);
+  background-image: url('/api/ui/sprites/chest_lid_under.png');
+  filter: brightness(0.4);
+}
+.chest-under {
+  height: 140px;
+  top: 50px;
+  transform-origin: top;
+  transform: translateZ(70px) rotateX(-90deg);
+  background-image: url('/api/ui/sprites/chest_lid_under.png');
+  filter: brightness(0.65);
+}
+.chest-lock {
+  position: absolute;
+  left: 60px;
+  top: 30px;
+  width: 20px;
+  height: 40px;
+  transform: translateZ(80px);
+  background: url('/api/ui/sprites/chest_lock.png') center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+  backface-visibility: hidden;
+}
+.chest-aura {
+  position: absolute;
+  width: 300px;
+  height: 240px;
+  top: 52px;
+  left: calc(50% - 150px);
+  background: radial-gradient(ellipse, #ffc64e66, #e9b13c15 50%, transparent 70%);
+  opacity: 0.18;
+  transition: opacity 550ms;
+  pointer-events: none;
+}
+.chest-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.chest-particles i {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  background: #ffe6a0;
+  box-shadow: 0 0 10px #ffc453;
+  top: 53%;
+  left: 43%;
+  opacity: 0;
+  animation: chest-spark 4.8s linear infinite;
+}
+.chest-particles i:nth-child(2) {
+  left: 56%;
+  animation-delay: -0.8s;
+}
+.chest-particles i:nth-child(3) {
+  left: 48%;
+  animation-delay: -1.6s;
+  width: 3px;
+  height: 3px;
+}
+.chest-particles i:nth-child(4) {
+  left: 62%;
+  animation-delay: -2.4s;
+}
+.chest-particles i:nth-child(5) {
+  left: 38%;
+  animation-delay: -3.2s;
+  width: 3px;
+  height: 3px;
+}
+.chest-particles i:nth-child(6) {
+  left: 51%;
+  animation-delay: -4s;
+}
+.community-chest:is(:hover, :focus-visible, .is-open) .chest-lid {
+  transform: rotateX(90deg);
+}
+.community-chest:is(:hover, :focus-visible, .is-open) .chest-aura {
+  opacity: 1;
+}
+.community-chest:is(:hover, :focus-visible, .is-open) .chest-particles i {
+  animation-duration: 2.4s;
+}
+.sponsor-art .sponsor-diamond-large {
+  pointer-events: none;
+  z-index: 2;
+  transition: translate 650ms;
+}
+.sponsor-art:has(.community-chest:is(:hover, :focus-visible, .is-open)) .sponsor-diamond-large {
+  translate: 0 -18px;
+}
+.sponsor-art .sponsor-art-caption {
+  pointer-events: none;
+  font-size: 12px;
+}
+.sponsor-art .sponsor-art-caption small {
+  font-size: 10px;
+  color: #a9b68d;
+}
+@keyframes chest-spark {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 10px);
+  }
+  25% {
+    opacity: 0.8;
+  }
+  75% {
+    opacity: 0;
+    transform: translate(12px, -85px);
+  }
+}
+@media (max-width: 1050px) {
+  .chest-model {
+    top: 100px;
+    transform: rotateX(-30deg) rotateY(-45deg) scale(0.85);
+  }
+}
+@media (max-width: 780px) {
+  .community-chest {
+    top: 36px;
+  }
+  .chest-model {
+    top: 108px;
+    transform: rotateX(-30deg) rotateY(-45deg) scale(0.8);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chest-lid,
+  .chest-aura,
+  .sponsor-art .sponsor-diamond-large {
+    transition: none;
+  }
+  .chest-particles i {
+    animation: none;
+  }
+}

@@ -147,6 +147,159 @@ def click_edit(page: Page, button: str, status: int = 200) -> dict:
 
 
 @pytest.mark.e2e
+def test_contextual_placement_connections_complete_door_and_visual_variants(
+    walk_page: tuple[Page, httpx.Client, str, list[str]],
+) -> None:
+    page, client, path, _ = walk_page
+    response = client.post(
+        path + "/edit",
+        json={
+            "expected_revision": 0,
+            "request_id": "placement-floor",
+            "operations": [
+                {
+                    "op": "fill",
+                    "bounds": {"low": [-2, 0, -2], "high": [7, 0, 3]},
+                    "state": {"name": "oak_planks"},
+                },
+                {
+                    "op": "fill",
+                    "bounds": {"low": [0, 1, 0], "high": [0, 3, 0]},
+                    "state": {"name": "stone"},
+                },
+            ],
+        },
+    )
+    assert response.is_success, response.text
+    page.reload()
+    settled(page)
+
+    def choose(name: str) -> None:
+        page.locator("#search").fill(name)
+        page.locator(f'[data-name="minecraft:{name}"]').click()
+        settled(page)
+        assert page.locator("#automatic-placement").is_checked()
+
+    def click_surface(target: list[float], camera: list[float], *, tool: str = "place") -> dict:
+        page.locator(f'[data-tool="{tool}"]').click()
+        coordinates = page.evaluate(
+            """({target, camera}) => {
+          const v=window.workbench.viewer;
+          v.camera.position.set(...camera); v.controls.target.set(...target);
+          v.controls.update(); v.drawNow();
+          const p=v.camera.position.clone().set(...target).project(v.camera);
+          const r=v.renderer.domElement.getBoundingClientRect();
+          return [r.x+(p.x+1)*r.width/2,r.y+(1-p.y)*r.height/2];
+        }""",
+            {"target": target, "camera": camera},
+        )
+        with page.expect_response(lambda r: r.url.endswith("/edit")) as edited:
+            page.mouse.click(*coordinates)
+        assert edited.value.status == 200, edited.value.text()
+        settled(page)
+        return edited.value.json()
+
+    choose("oak_slab")
+    click_surface([3.5, 1, 0.5], [3.5, 6, 5])
+    assert cells(client, path)["3,1,0"][1]["type"] == "bottom"
+    click_surface([3.5, 1.5, 0.5], [3.5, 6, 5])
+    assert cells(client, path)["3,1,0"][1]["type"] == "double"
+    page.locator("#undo").click()
+    settled(page)
+    assert cells(client, path)["3,1,0"][1]["type"] == "bottom"
+    page.locator("#redo").click()
+    settled(page)
+    assert cells(client, path)["3,1,0"][1]["type"] == "double"
+
+    choose("torch")
+    click_surface([0.5, 1.4, 1], [0.5, 2, 6])
+    torch = cells(client, path)["0,1,1"]
+    assert torch[0] == "minecraft:wall_torch" and torch[1]["facing"] == "south"
+    choose("ladder")
+    click_surface([0.5, 2.4, 1], [0.5, 3, 6])
+    assert cells(client, path)["0,2,1"][1]["facing"] == "south"
+
+    choose("oak_door")
+    click_surface([5.5, 1, 0.5], [5.5, 6, 5])
+    placed = cells(client, path)
+    assert placed["5,1,0"][1]["half"] == "lower"
+    assert placed["5,2,0"][1]["half"] == "upper"
+    page.locator("#undo").click()
+    settled(page)
+    assert "5,1,0" not in cells(client, path) and "5,2,0" not in cells(client, path)
+    page.locator("#redo").click()
+    settled(page)
+    assert "5,2,0" in cells(client, path)
+    click_surface([5.5, 1.5, 1], [5.5, 2, 6], tool="erase")
+    assert "5,1,0" not in cells(client, path) and "5,2,0" not in cells(client, path)
+
+    choose("iron_bars")
+    click_surface([1.5, 1, 0.5], [1.5, 6, 5])
+    click_surface([2.5, 1, 0.5], [2.5, 6, 5])
+    placed = cells(client, path)
+    assert placed["1,1,0"][1]["east"] == "true"
+    assert placed["2,1,0"][1]["west"] == "true"
+    page.locator("#undo").click()
+    settled(page)
+    assert cells(client, path)["1,1,0"][1]["east"] == "false"
+    page.locator("#redo").click()
+    settled(page)
+    assert cells(client, path)["1,1,0"][1]["east"] == "true"
+
+    choose("andesite_stairs")
+    shapes = page.locator('[data-variant-property="shape"]')
+    assert shapes.count() == 5
+    page.wait_for_function("""() => [...document.querySelectorAll('[data-variant-property="shape"] img')]
+      .every(image => image.complete && image.naturalWidth > 0)""")
+    page.locator('[data-variant-property="shape"][data-variant-value="outer_left"]').click()
+    assert not page.locator("#automatic-placement").is_checked()
+    page.locator('[data-variant-property="half"][data-variant-value="top"]').click()
+    click_surface([6.5, 1, 0.5], [6.5, 6, 5])
+    placed = cells(client, path)["6,1,0"][1]
+    assert placed["shape"] == "outer_left" and placed["half"] == "top"
+    page.locator("#automatic-placement").check()
+    assert page.locator("#automatic-placement").is_checked()
+    page.locator("#properties").screenshot(path=str(ARTIFACTS / "placement-shape-controls.png"))
+    page.locator("#fit").click()
+    settled(page)
+    page.screenshot(path=str(ARTIFACTS / "placement-result.png"))
+
+    revision = client.get(path).json()["revision"]
+    exact = client.post(
+        path + "/edit",
+        json={
+            "expected_revision": revision,
+            "request_id": "old-half-door",
+            "auto_connect": False,
+            "complete_structures": False,
+            "operations": [
+                {
+                    "op": "set",
+                    "blocks": [
+                        {
+                            "position": [7, 1, 2],
+                            "state": {"name": "oak_door", "properties": {"half": "lower"}},
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+    assert exact.is_success, exact.text
+    page.locator("#save").click()
+    settled(page)
+    page.locator("#check").click()
+    page.wait_for_function("!document.querySelector('#apply-rules').hidden")
+    assert "7, 1, 2" in page.locator("#check-issues").inner_text()
+    page.locator("#apply-rules").click()
+    settled(page)
+    assert "7,2,2" not in cells(client, path)
+    page.locator("#commit").click()
+    settled(page)
+    assert cells(client, path)["7,2,2"][1]["half"] == "upper"
+
+
+@pytest.mark.e2e
 def test_first_person_immersive_material_menu_and_layout_restore(
     walk_page: tuple[Page, httpx.Client, str, list[str]],
 ) -> None:
@@ -183,7 +336,7 @@ def test_first_person_immersive_material_menu_and_layout_restore(
         page.locator("#search").fill("spruce_stairs")
     page.locator('[data-name="minecraft:spruce_stairs"]').click()
     settled(page)
-    page.locator('#properties select[data-property="facing"]').select_option("east")
+    page.locator('[data-variant-property="facing"][data-variant-value="east"]').click()
     settled(page)
     assert "云杉" in page.locator("#walk-material-name").inner_text()
     assert "朝东" in page.locator("#walk-material-properties").inner_text()

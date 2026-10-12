@@ -8,7 +8,30 @@ from design_workbench.domain.models import BlockState
 
 
 class Catalog:
+    @staticmethod
+    def versions() -> list[str]:
+        return sorted(
+            (
+                path.name.removeprefix("registry-").removesuffix(".json")
+                for path in files("design_workbench").joinpath("data").iterdir()
+                if path.name.startswith("registry-") and path.name.endswith(".json")
+            ),
+            key=lambda version: tuple(int(part) for part in version.split(".")),
+        )
+
+    @classmethod
+    def for_data_version(cls, data_version: int) -> "Catalog":
+        for version in cls.versions():
+            catalog = cls(version)
+            if catalog.data_version == data_version:
+                return catalog
+        raise WorkbenchError("UNSUPPORTED_VERSION", f"尚未支持 DataVersion={data_version}。")
+
     def __init__(self, version: str = "1.20.1") -> None:
+        if version not in self.versions():
+            raise WorkbenchError(
+                "UNSUPPORTED_VERSION", f"尚未支持 MC {version}。", "minecraft_version"
+            )
         path = files("design_workbench").joinpath(f"data/registry-{version}.json")
         if not path.is_file():
             raise WorkbenchError(

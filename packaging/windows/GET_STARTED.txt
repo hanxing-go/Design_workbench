@@ -1,0 +1,25 @@
+Design Workbench · Windows x64 便携包
+
+1. 将 ZIP 完整解压到一个可访问的文件夹。不要直接在压缩包中启动。
+2. 双击 DesignWorkbench.exe。首次使用点击“下载官方素材”，
+   或选择已有的 Minecraft Java 1.20.1 客户端 .jar 文件。
+3. 准备好后自动打开浏览器，开始建造或导入 .litematic。
+
+无需安装 Python、Node.js 或 uv。需要 Windows 10/11 x64 和支持 WebGL 的浏览器。
+首次下载素材需要网络；素材准备好后可离线使用。
+关闭浏览器后服务继续运行；在启动窗口点击“退出工作台”停止服务。
+默认仅监听 127.0.0.1，8765 被占用时自动选择空闲端口。
+
+作品和素材默认在 Windows 用户数据目录，不在程序文件夹中。
+点击“打开数据目录”可找到 projects 中的 .dwbench 工程。
+升级时退出旧版本，解压新版本，使用相同的用户数据目录。
+
+如需数据跟随程序移动，在 DesignWorkbench.exe 同目录创建空文件 portable.flag。
+下次启动后数据写入同目录 userdata。此模式不会自动迁移已有作品；
+切换前请退出工作台，并备份或复制完整的数据目录。
+
+WorkbenchCLI.exe 提供命令行工具，运行 WorkbenchCLI.exe --help 查看帮助。
+本包是标准版，不包含 MCP SDK 或 Playwright 截图依赖。
+Minecraft 素材不随发布包分发，在用户机器从官方来源下载或导入。
+源码 MIT 许可；Minecraft 与第三方依赖遵循各自许可。
+更多说明见 WINDOWS_PORTABLE.md。

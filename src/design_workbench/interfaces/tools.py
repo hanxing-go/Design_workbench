@@ -15,6 +15,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from design_workbench.adapters.rendering.jobs import RenderJobs
+from design_workbench.adapters.resources.catalog import Catalog
 from design_workbench.adapters.storage.sqlite import SqliteStore
 from design_workbench.application.contracts import Selector
 from design_workbench.application.design_contracts import (
@@ -49,6 +50,7 @@ from design_workbench.bootstrap import Workbench
 from design_workbench.domain.errors import WorkbenchError
 from design_workbench.domain.models import BlockState, Bounds
 from design_workbench.interfaces.designs import Designs
+from design_workbench.runtime import worker_command
 
 TOOL_CONTRACTS: dict[str, tuple[type[BaseModel], str]] = {
     "design.start": (
@@ -98,6 +100,10 @@ TOOL_CONTRACTS: dict[str, tuple[type[BaseModel], str]] = {
         "Validate a block state; return legal properties, normalized state and render support.",
     ),
     "project.list": (ToolRequest, "List managed projects and revisions."),
+    "versions.list": (
+        ToolRequest,
+        "List supported Java versions, DataVersions and installed resources. Each project keeps its own version; this does not convert projects.",
+    ),
     "project.create": (
         CreateTool,
         "Create a project. Reuse the same request_id and arguments to retry safely.",
@@ -294,7 +300,7 @@ class Tools:
             creationflags = subprocess.CREATE_NO_WINDOW
         try:
             process = subprocess.run(
-                [sys.executable, "-m", "design_workbench.interfaces.tool_worker"],
+                worker_command("design_workbench.interfaces.tool_worker"),
                 input=json.dumps(body).encode(),
                 capture_output=True,
                 timeout=self.workbench.settings.tool_timeout,
@@ -324,6 +330,26 @@ class Tools:
 
     def _dispatch(self, name: str, request: BaseModel) -> dict[str, Any]:
         workbench = self.workbench
+        if name == "versions.list":
+            return {
+                "default": workbench.catalog.version,
+                "items": [
+                    {
+                        "minecraft_version": version,
+                        "data_version": Catalog(version).data_version,
+                        "resources_ready": workbench.resources.active(version) is not None,
+                    }
+                    for version in Catalog.versions()
+                ],
+            }
+        if isinstance(request, (SearchTool, MaterialTool)):
+            workbench = (
+                workbench.for_project(self.project_path(request.project))
+                if request.project
+                else workbench.for_version(request.minecraft_version)
+            )
+            if request.minecraft_version and workbench.catalog.version != request.minecraft_version:
+                raise WorkbenchError("VERSION_MISMATCH", "材料查询版本与项目版本不一致。")
         if isinstance(request, SearchTool):
             result = workbench.catalog.search(
                 request.query, request.offset, request.limit, request.category
@@ -347,7 +373,14 @@ class Tools:
                 else {"status": "missing", "reason": "尚未配置资源"},
             }
         if isinstance(request, CreateTool):
-            digest = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
+            workbench = workbench.for_version(request.request.minecraft_version)
+            # Keep creation receipts from before the optional version field retryable.
+            encoded = request.model_dump_json(
+                exclude={"request": {"minecraft_version"}}
+                if request.request.minecraft_version is None
+                else None
+            )
+            digest = hashlib.sha256(encoded.encode()).hexdigest()
             identifier = hashlib.sha256(request.request_id.encode()).hexdigest()[:32]
             path = self.project_path(identifier)
             if path.exists():
@@ -364,6 +397,8 @@ class Tools:
                 "name": body.name,
                 "bounds": body.bounds.model_dump(),
                 "request_id": request.request_id,
+                "minecraft_version": workbench.catalog.version,
+                "data_version": workbench.catalog.data_version,
             }
             try:
                 SqliteStore.create(

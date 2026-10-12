@@ -21,7 +21,7 @@ from ..storage.sqlite import RenderRead, SqliteStore, decode_chunk
 from .packets import RenderedChunk, render_chunk
 from .signs import sign_texts
 
-FLUIDS = {"minecraft:water", "minecraft:lava"}
+FLUIDS = {"minecraft:water", "minecraft:lava", "minecraft:bubble_column"}
 
 
 def file_identity(path: Path) -> tuple[int, int]:

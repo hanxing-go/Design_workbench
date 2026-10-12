@@ -7,7 +7,7 @@
   <nav class="home-nav" aria-label="主导航">
     <a href="#" class="is-current" aria-current="page">首页</a>
     <a href="#designs">我的设计 <span class="nav-count" id="home-project-count">0</span></a>
-    <button type="button" data-home-guide>建造指南 <span aria-hidden="true">↗</span></button>
+    <button type="button" data-home-guide>建造指南 <span aria-hidden="true">→</span></button>
     <a href="?view=sponsor" class="home-sponsor-link"
       ><span data-icon="diamond" aria-hidden="true"></span>赞助支持</a
     >
@@ -15,7 +15,7 @@
   <div class="home-header-actions">
     <span class="home-version"><i></i><span id="home-version">JAVA EDITION</span></span>
     <a href="?view=workbench" class="home-workbench-link"
-      >进入工作台 <span aria-hidden="true">↗</span></a
+      >进入工作台 <span aria-hidden="true">→</span></a
     >
   </div>
 </header>
@@ -68,6 +68,15 @@
         <span data-icon="grass" aria-hidden="true"></span>
         <p>你的世界，从一个方块开始</p>
       </div>
+      <img
+        class="hero-builders"
+        src="__BUILDERS_URL__"
+        width="502"
+        height="577"
+        alt="Alex 与史蒂夫在脚手架旁一起搭建方块"
+        draggable="false"
+        decoding="async"
+      />
       <div class="scene-coordinate" aria-hidden="true">
         X <span>128</span> <b>/</b> Y <span>64</span> <b>/</b> Z <span>128</span>
       </div>
@@ -111,24 +120,31 @@
     </div>
     <div class="start-cards">
       <button class="start-card start-create" data-home-create>
+        <span class="start-kicker">01 / 创造</span>
         <span class="start-art" data-icon="crafting" aria-hidden="true"></span>
         <span class="start-card-content"
-          ><strong>创造一个新世界 <span class="card-tag">NEW</span></strong
-          ><span>空白画布，无限可能。从第一个方块开始。</span></span
-        ><span class="start-arrow" aria-hidden="true">↗</span>
+          ><strong>新建设计</strong><span>空白画布，无限可能。从第一个方块开始。</span></span
+        ><span class="start-action"
+          >打开空白工作台 <span class="start-arrow" aria-hidden="true">→</span></span
+        >
       </button>
       <button class="start-card start-import" data-home-import>
+        <span class="start-kicker">02 / 延续</span>
         <span class="start-art" data-icon="chest" aria-hidden="true"></span>
         <span class="start-card-content"
-          ><strong>带上你的蓝图</strong><span>导入 .litematic，让已有灵感继续生长。</span></span
-        ><span class="start-arrow" aria-hidden="true">↗</span>
+          ><strong>导入蓝图</strong><span>导入 .litematic，让已有灵感继续生长。</span></span
+        ><span class="start-action"
+          >选择蓝图文件 <span class="start-arrow" aria-hidden="true">↑</span></span
+        >
       </button>
       <button class="start-card start-cabin" id="home-cabin">
+        <span class="start-kicker">03 / 探索</span>
         <span class="start-art" data-icon="cabin" aria-hidden="true"></span>
         <span class="start-card-content"
-          ><strong>先搭一间小屋 <span class="card-tag tag-warm">TRY IT</span></strong
-          ><span>从一份木屋起稿，熟悉你的建造工具。</span></span
-        ><span class="start-arrow" aria-hidden="true">↗</span>
+          ><strong>从示例开始</strong><span>从一份木屋起稿，熟悉你的建造工具。</span></span
+        ><span class="start-action"
+          >搭建第一间木屋 <span class="start-arrow" aria-hidden="true">→</span></span
+        >
       </button>
     </div>
   </section>
@@ -145,7 +161,7 @@
           ><input
             id="home-search"
             type="search"
-            placeholder="寻找你的灵感…"
+            placeholder="搜索设计名称…"
             aria-label="搜索我的设计" /></label
         ><button
           class="design-toggle"
@@ -169,7 +185,11 @@
       </div>
       <button data-home-create>新建设计 <span aria-hidden="true">＋</span></button>
     </div>
-    <p id="home-no-results" class="home-no-results" hidden>没有找到匹配的设计，试试其他名称。</p>
+    <p id="home-no-results" class="home-no-results" hidden>
+      没有找到匹配的设计，试试其他名称。<button type="button" id="home-clear-search">
+        清空搜索
+      </button>
+    </p>
     <div class="home-tip">
       <span data-icon="torch" aria-hidden="true"></span>
       <p>
@@ -188,7 +208,7 @@
       <h2>好建筑，从熟悉工具开始。</h2>
       <p>花一点时间认识你的工作台，让每一次建造都更得心应手。</p>
     </div>
-    <button data-home-guide>查看建造指南 <span aria-hidden="true">↗</span></button>
+    <button data-home-guide>查看建造指南 <span aria-hidden="true">→</span></button>
   </section>
 </main>
 <footer class="home-footer">
@@ -206,6 +226,7 @@
     ><span data-icon="diamond" aria-hidden="true"></span>支持开源</a
   >
 </footer>
+<p class="home-disclaimer">非 Minecraft 官方产品。未经 Mojang 或 Microsoft 批准，也不与其关联。</p>
 <input id="home-import-file" type="file" accept=".litematic" hidden />
 <output id="home-notice" class="home-notice" role="status" hidden></output>
 <dialog id="home-create-dialog" class="home-dialog" aria-labelledby="home-create-title">
@@ -227,6 +248,10 @@
       maxlength="128"
       autocomplete="off"
     />
+    <label for="home-minecraft-version">Minecraft Java 版本</label>
+    <select id="home-minecraft-version" name="minecraft_version"></select>
+    <button type="button" id="home-resources-setup">下载所选版本的官方素材</button>
+    <p id="home-resource-status" class="muted" role="status"></p>
     <p id="home-create-error" class="home-form-error" role="alert"></p>
     <div class="dialog-actions">
       <button type="button" data-home-close>再想想</button

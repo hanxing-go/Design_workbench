@@ -9,9 +9,18 @@ from ..resources.special import fluid_geometry, fluid_height
 
 
 def fluid_model(scene: Scene, point: Point, state: BlockState, catalog: Catalog) -> dict[str, Any]:
+    water = state.name in {"minecraft:water", "minecraft:bubble_column"}
+
     def same(p: Point) -> bool:
         cell = scene.cells.get(p)
-        return cell is not None and cell.state.name == state.name
+        return cell is not None and (
+            cell.state.name in {"minecraft:water", "minecraft:bubble_column"}
+            if water
+            else cell.state.name == state.name
+        )
+
+    def height(value: BlockState) -> float:
+        return 1.0 if value.name == "minecraft:bubble_column" else fluid_height(value)
 
     heights = []
     for cx, cz in ((0, 0), (1, 0), (1, 1), (0, 1)):
@@ -25,7 +34,7 @@ def fluid_model(scene: Scene, point: Point, state: BlockState, catalog: Catalog)
         for p in samples:
             cell = scene.cells.get(p)
             if same(p) and cell:
-                h = fluid_height(cell.state)
+                h = height(cell.state)
                 w = 10 if h >= 0.8 else 1
                 total += h * w
                 weight += w
@@ -35,5 +44,11 @@ def fluid_model(scene: Scene, point: Point, state: BlockState, catalog: Catalog)
                 or catalog.blocks[cell.state.name].get("transparent", False)
             ):
                 weight += 1
-        heights.append(round(total / weight, 6) if weight else fluid_height(state))
-    return {"status": "static", "reason": "邻格流体静态预览", **fluid_geometry(state, heights)}
+        heights.append(round(total / weight, 6) if weight else height(state))
+    rendered_state = BlockState.make("water") if state.name == "minecraft:bubble_column" else state
+    reason = (
+        "气泡柱水体静态预览；不显示气泡粒子"
+        if state.name == "minecraft:bubble_column"
+        else "邻格流体静态预览"
+    )
+    return {"status": "static", "reason": reason, **fluid_geometry(rendered_state, heights)}

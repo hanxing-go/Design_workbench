@@ -14,13 +14,18 @@ from design_workbench.domain.errors import WorkbenchError
 
 
 def edit(
-    service: SceneService, operations: list[dict[str, Any]], request_id: str = "edit"
+    service: SceneService,
+    operations: list[dict[str, Any]],
+    request_id: str = "edit",
+    *,
+    auto_connect: bool = True,
 ) -> dict[str, Any]:
     return service.edit(
         EditRequest.model_validate(
             {
                 "expected_revision": service.summary()["revision"],
                 "request_id": request_id,
+                "auto_connect": auto_connect,
                 "operations": operations,
             }
         )
@@ -127,11 +132,22 @@ def test_rotation_mirror_and_collision(service: SceneService) -> None:
             }
         ],
         "stair",
+        auto_connect=False,
     )
-    edit(service, [{"op": "transform", "selector": {"group": "roof"}, "rotation": 90}], "rotate")
+    edit(
+        service,
+        [{"op": "transform", "selector": {"group": "roof"}, "rotation": 90}],
+        "rotate",
+        auto_connect=False,
+    )
     scene = service.repository.load()
     assert dict(scene.cells[(0, 0, 1)].state.properties)["facing"] == "south"
-    edit(service, [{"op": "transform", "selector": {"group": "roof"}, "mirror": "z"}], "mirror")
+    edit(
+        service,
+        [{"op": "transform", "selector": {"group": "roof"}, "mirror": "z"}],
+        "mirror",
+        auto_connect=False,
+    )
     properties = dict(service.repository.load().cells[(0, 0, -1)].state.properties)
     assert properties["facing"] == "north"
     assert properties["shape"] == "inner_right"

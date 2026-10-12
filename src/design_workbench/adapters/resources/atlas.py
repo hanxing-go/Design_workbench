@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-RECIPE_VERSION = 2
+RECIPE_VERSION = 4
 
 
 def build_atlas(directory: Path) -> dict[str, Any]:
@@ -20,6 +20,21 @@ def build_atlas(directory: Path) -> dict[str, Any]:
                 "*/textures/block/**/*.png",
                 "*/textures/entity/bed/*.png",
                 "*/textures/entity/signs/**/*.png",
+                "*/textures/entity/chest/*.png",
+                "*/textures/entity/shulker/*.png",
+                "*/textures/entity/banner_base.png",
+                "*/textures/entity/banner/base.png",
+                "*/textures/entity/banner/banner_base.png",
+                "*/textures/entity/skeleton/skeleton.png",
+                "*/textures/entity/skeleton/wither_skeleton.png",
+                "*/textures/entity/zombie/zombie.png",
+                "*/textures/entity/creeper/creeper.png",
+                "*/textures/entity/piglin/piglin.png",
+                "*/textures/entity/enderdragon/dragon.png",
+                "*/textures/entity/player/wide/steve.png",
+                "*/textures/entity/conduit/base.png",
+                "*/textures/entity/decorated_pot/decorated_pot_base.png",
+                "*/textures/entity/decorated_pot/decorated_pot_side.png",
             )
             for p in assets.glob(pattern)
         }

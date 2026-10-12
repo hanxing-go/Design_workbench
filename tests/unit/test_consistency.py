@@ -16,7 +16,8 @@ def test_missing_partner_and_connections_are_suggestions(catalog: Catalog) -> No
     result = inspect_consistency(scene)
     assert result["revision"] == 7
     assert result["issues"][0]["code"] == "MISSING_PARTNER"
-    assert len(result["proposals"]) == 2
+    assert len(result["proposals"]) == 3
+    assert any(proposal["position"] == (0, 1, 0) for proposal in result["proposals"])
     assert scene.cells == before
     assert result["requires_confirmation"]
 

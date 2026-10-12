@@ -243,6 +243,12 @@ class SqliteStore:
     def load(self) -> Scene:
         return self.snapshot(include_source=False)[0]
 
+    def game_version(self) -> tuple[str, int]:
+        """Read version metadata without decoding the project's chunks."""
+        with self.connection() as connection:
+            data = self._meta(connection)
+            return str(data["minecraft_version"]), int(data["data_version"])
+
     def snapshot(self, include_source: bool = True) -> tuple[Scene, bytes | None]:
         """Read cells and their NBT source in one SQLite read transaction."""
         with self.connection() as connection:

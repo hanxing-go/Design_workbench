@@ -2,6 +2,8 @@
 
 核对日期：2026-10-10。项目 `D:\Study\program\Design_workbench`，版本 0.1.0，P1–P6 已完成，交付点 A/B 达成，证据见 [P6 验收记录](P6_ACCEPTANCE.md)。本轮渲染性能与大建筑的独立证据见 [优化实验记录](RENDERING_OPTIMIZATION_LOG.md)。
 
+2026-10-12 多版本增量：17 个 Java 发行版本，项目版本隔离、首页选版本并下载素材、蓝图版本识别、v5/v6 往返，见 [多版本支持](VERSION_SUPPORT.md)。下表中的 1.20.1 数字保留为基线验收范围。
+
 ## 已实现
 
 | 领域 | 能力 | 范围 |

@@ -113,8 +113,8 @@ class Litematic:
             else:
                 raw = payload
             document = nbtlib.File.parse(io.BytesIO(raw))
-            if int(document.get("Version", 0)) != 6:
-                raise WorkbenchError("UNSUPPORTED_FORMAT", "当前兼容范围为 Litematica v6。")
+            if int(document.get("Version", 0)) not in {5, 6}:
+                raise WorkbenchError("UNSUPPORTED_FORMAT", "当前兼容范围为 Litematica v5/v6。")
             if "MinecraftDataVersion" not in document or "Regions" not in document:
                 raise WorkbenchError("INVALID_LITEMATIC", "蓝图缺少版本或区域。")
             return document

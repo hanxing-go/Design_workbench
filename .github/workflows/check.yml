@@ -13,10 +13,10 @@ jobs:
           python-version: '3.12'
           enable-cache: true
       - run: uv sync --locked --extra gui --extra ai --extra render
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run mypy
-      - run: uv run pytest -m "not e2e and not resources"
+      - run: uv run --extra gui --extra ai --extra render ruff check .
+      - run: uv run --extra gui --extra ai --extra render ruff format --check .
+      - run: uv run --extra gui --extra ai --extra render mypy
+      - run: uv run --extra gui --extra ai --extra render pytest -m "not e2e and not resources"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -24,7 +24,7 @@ jobs:
       - run: npm run check --prefix frontend
       - run: npm run build --prefix frontend
       - run: uv build
-      - run: uv run python scripts/install_smoke.py --extras gui,ai,render
+      - run: uv run --extra gui --extra ai --extra render python scripts/install_smoke.py --extras gui,ai,render
   browser:
     runs-on: ubuntu-latest
     env:
@@ -43,6 +43,6 @@ jobs:
       - run: npm ci --prefix frontend
       - run: npm run check --prefix frontend
       - run: npm run build --prefix frontend
-      - run: uv run design-workbench resources setup --config config.example.toml
-      - run: uv run playwright install --with-deps chromium
-      - run: uv run pytest -m 'e2e or resources'
+      - run: uv run --extra gui --extra ai --extra render design-workbench resources setup --config config.example.toml
+      - run: uv run --extra gui --extra ai --extra render playwright install --with-deps chromium
+      - run: uv run --extra gui --extra ai --extra render pytest -m 'e2e or resources'

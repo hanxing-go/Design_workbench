@@ -1,4 +1,4 @@
-/* empty css              */import{h as m}from"./homeIcons-CSC-BSB0.js";const u=`<div class="home-topline" aria-hidden="true"></div>
+import{i as g,h as b}from"./minecraftUI-Cl_zRL2Y.js";/* empty css             */const v=`<div class="home-topline" aria-hidden="true"></div>
 <header class="home-header">
   <a class="brand home-brand" href="/" aria-label="Design Workbench 首页"
     ><span class="brand-mark" data-icon="grass" aria-hidden="true"></span
@@ -13,7 +13,7 @@
   <div class="home-header-actions">
     <span class="home-version"><i></i> OPEN SOURCE · MIT</span
     ><a href="?view=workbench" class="home-workbench-link"
-      >进入工作台 <span aria-hidden="true">↗</span></a
+      >进入工作台 <span aria-hidden="true">→</span></a
     >
   </div>
 </header>
@@ -49,17 +49,49 @@
         感谢每一份支持
       </p>
     </div>
-    <div class="sponsor-art" aria-hidden="true">
+    <div class="sponsor-art">
+      <img
+        class="sponsor-steve"
+        src="__STEVE_PICKAXE_URL__"
+        width="600"
+        height="800"
+        alt="史蒂夫手持铁镐，陪伴社区宝箱"
+        draggable="false"
+        decoding="async"
+      />
       <div class="sponsor-art-grid"></div>
       <span class="sponsor-art-label">COMMUNITY CHEST <span>01 / ∞</span></span
       ><span class="sponsor-spark spark-a">✦</span><span class="sponsor-spark spark-b">+</span
       ><span class="sponsor-spark spark-c">✦</span>
       <div class="sponsor-glow"></div>
-      <span class="sponsor-diamond-large" data-icon="diamond"></span
-      ><span class="sponsor-gem gem-one" data-icon="emerald"></span
-      ><span class="sponsor-gem gem-two" data-icon="diamond"></span
-      ><span class="sponsor-gem gem-three" data-icon="emerald"></span
-      ><span class="sponsor-chest-large" data-icon="chest"></span>
+      <span aria-hidden="true" class="sponsor-diamond-large" data-icon="diamond"></span
+      ><span aria-hidden="true" class="sponsor-gem gem-one" data-icon="emerald"></span
+      ><span aria-hidden="true" class="sponsor-gem gem-two" data-icon="diamond"></span
+      ><span aria-hidden="true" class="sponsor-gem gem-three" data-icon="emerald"></span
+      ><button
+        type="button"
+        class="community-chest"
+        id="community-chest"
+        aria-label="打开社区宝箱"
+        aria-pressed="false"
+        title="悬停开盖，点击保持打开；再次点击合上"
+      >
+        <span class="chest-aura" aria-hidden="true"></span>
+        <span class="chest-model" aria-hidden="true">
+          <span class="chest-base"
+            ><span class="chest-face chest-front"></span><span class="chest-face chest-side"></span
+            ><span class="chest-inside"></span
+          ></span>
+          <span class="chest-lid"
+            ><span class="chest-face chest-front"></span><span class="chest-face chest-side"></span
+            ><span class="chest-top"></span><span class="chest-under"></span
+            ><span class="chest-lock"></span
+          ></span>
+        </span>
+        <span class="chest-particles" aria-hidden="true"
+          ><i></i><i></i><i></i><i></i><i></i><i></i
+        ></span>
+      </button>
       <div class="sponsor-art-shadow"></div>
       <div class="sponsor-art-caption">
         <span>每一份心意，都是珍贵的宝藏。</span><small>THANK YOU, BUILDER!</small>
@@ -265,4 +297,4 @@
   <p id="sponsor-qr-recipient"></p>
   <p class="sponsor-qr-note">金额随心。感谢你为这个开源世界添砖加瓦。</p>
 </dialog>
-`,c={repository:"https://github.com/hanxing-go/Design_workbench",channels:[]},l=document.querySelector("#app");l.className="home-mode sponsor-mode";l.innerHTML=u;document.title="赞助支持 · Design Workbench";document.querySelector('meta[name="description"]')?.setAttribute("content","支持 Design Workbench 开源 Minecraft 建筑设计工作台，让创造继续生长。");const i=c.repository.replace(/\/$/,"");document.querySelectorAll("[data-repository-link]").forEach(n=>{n.href=i});document.querySelectorAll("[data-issues-link]").forEach(n=>{n.href=`${i}/issues`});document.querySelectorAll("[data-contribute-link]").forEach(n=>{n.href=`${i}/blob/main/CONTRIBUTING.md`});document.querySelectorAll("[data-contact-link]").forEach(n=>{n.href=`${i}/issues/new?title=${encodeURIComponent("赞助合作")}`});const e=document.getElementById("sponsor-qr-dialog"),h=document.getElementById("sponsor-channels");for(const n of c.channels){let s=null;if(n.url)try{const a=new URL(n.url);a.protocol==="https:"&&(s=a)}catch{}if(!s&&!n.qrImage)continue;const o=document.createElement("article");o.className="sponsor-channel";const r=document.createElement("span");r.className="sponsor-channel-icon",r.dataset.icon=n.icon,r.setAttribute("aria-hidden","true");const t=document.createElement("h3");t.textContent=n.name;const p=document.createElement("p");if(p.textContent=n.description,o.append(r,t,p),s){const a=document.createElement("a");a.className="sponsor-primary",a.href=s.href,a.target="_blank",a.rel="noopener noreferrer",a.textContent=`前往${n.name}赞助 ↗`,o.append(a)}else if(n.qrImage){const a=document.createElement("button");a.className="primary",a.textContent=`使用${n.name}赞助 →`,a.onclick=()=>{document.getElementById("sponsor-qr-title").textContent=`${n.name}扫码赞助`;const d=document.getElementById("sponsor-qr-image");d.src=n.qrImage,d.alt=`${n.name}赞助收款码`,document.getElementById("sponsor-qr-recipient").textContent=n.recipient?`收款方：${n.recipient}`:"",e.showModal()},o.append(a)}h.append(o)}document.getElementById("sponsor-unconfigured").hidden=h.childElementCount>0;document.getElementById("sponsor-qr-close").onclick=()=>e.close();e.addEventListener("click",n=>{if(n.target!==e)return;const s=e.getBoundingClientRect();(n.clientX<s.left||n.clientX>s.right||n.clientY<s.top||n.clientY>s.bottom)&&e.close()});m();
+`,f="/assets/steve-pickaxe-C5E0tz6Y.png",h={repository:"https://github.com/hanxing-go/Design_workbench",channels:[]},m=document.querySelector("#app");m.className="home-mode sponsor-mode";m.innerHTML=v.replace("__STEVE_PICKAXE_URL__",f);g();const i=document.getElementById("community-chest");let o=!1;i.onclick=()=>{o=!o,i.classList.toggle("is-open",o),i.setAttribute("aria-pressed",String(o)),i.setAttribute("aria-label",o?"合上社区宝箱":"打开社区宝箱")};document.title="赞助支持 · Design Workbench";document.querySelector('meta[name="description"]')?.setAttribute("content","支持 Design Workbench 开源 Minecraft 建筑设计工作台，让创造继续生长。");const c=h.repository.replace(/\/$/,"");document.querySelectorAll("[data-repository-link]").forEach(n=>{n.href=c});document.querySelectorAll("[data-issues-link]").forEach(n=>{n.href=`${c}/issues`});document.querySelectorAll("[data-contribute-link]").forEach(n=>{n.href=`${c}/blob/main/CONTRIBUTING.md`});document.querySelectorAll("[data-contact-link]").forEach(n=>{n.href=`${c}/issues/new?title=${encodeURIComponent("赞助合作")}`});const e=document.getElementById("sponsor-qr-dialog"),u=document.getElementById("sponsor-channels");for(const n of h.channels){let a=null;if(n.url)try{const s=new URL(n.url);s.protocol==="https:"&&(a=s)}catch{}if(!a&&!n.qrImage)continue;const r=document.createElement("article");r.className="sponsor-channel";const t=document.createElement("span");t.className="sponsor-channel-icon",t.dataset.icon=n.icon,t.setAttribute("aria-hidden","true");const p=document.createElement("h3");p.textContent=n.name;const d=document.createElement("p");if(d.textContent=n.description,r.append(t,p,d),a){const s=document.createElement("a");s.className="sponsor-primary",s.href=a.href,s.target="_blank",s.rel="noopener noreferrer",s.textContent=`前往${n.name}赞助 ↗`,r.append(s)}else if(n.qrImage){const s=document.createElement("button");s.className="primary",s.textContent=`使用${n.name}赞助 →`,s.onclick=()=>{document.getElementById("sponsor-qr-title").textContent=`${n.name}扫码赞助`;const l=document.getElementById("sponsor-qr-image");l.src=n.qrImage,l.alt=`${n.name}赞助收款码`,document.getElementById("sponsor-qr-recipient").textContent=n.recipient?`收款方：${n.recipient}`:"",e.showModal()},r.append(s)}u.append(r)}document.getElementById("sponsor-unconfigured").hidden=u.childElementCount>0;document.getElementById("sponsor-qr-close").onclick=()=>e.close();e.addEventListener("click",n=>{if(n.target!==e)return;const a=e.getBoundingClientRect();(n.clientX<a.left||n.clientX>a.right||n.clientY<a.top||n.clientY>a.bottom)&&e.close()});b();

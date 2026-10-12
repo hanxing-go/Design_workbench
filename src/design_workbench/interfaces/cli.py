@@ -65,11 +65,12 @@ def setup_resources(
     config: Annotated[Path | None, typer.Option()] = None,
     jar: Annotated[Path | None, typer.Option(help="已有官方客户端 jar")] = None,
     language: Annotated[Path | None, typer.Option(help="zh_cn.json")] = None,
+    minecraft_version: Annotated[str | None, typer.Option(help="Minecraft Java 版本")] = None,
 ) -> None:
     """获取或导入版本一致的官方客户端静态素材。"""
     from design_workbench.adapters.resources.acquire import fetch_official
 
-    settings = Settings.load(config)
+    settings = Settings.load(config, minecraft_version=minecraft_version)
     workbench = Workbench(settings)
     if jar is None:
         jar, provenance = fetch_official(
@@ -84,11 +85,15 @@ def setup_resources(
 
 @resources.command("audit")
 @handled
-def audit_resources(output: Path, config: Annotated[Path | None, typer.Option()] = None) -> None:
+def audit_resources(
+    output: Path,
+    config: Annotated[Path | None, typer.Option()] = None,
+    minecraft_version: Annotated[str | None, typer.Option(help="Minecraft Java 版本")] = None,
+) -> None:
     """逐状态检查资源支持范围并写出报告。"""
     from collections import Counter
 
-    workbench = Workbench(Settings.load(config))
+    workbench = Workbench(Settings.load(config, minecraft_version=minecraft_version))
     if workbench.pack is None:
         raise WorkbenchError("RESOURCES_NOT_READY", "先执行 resources setup。")
     total: Counter[str] = Counter()
@@ -118,8 +123,9 @@ def create_project(
     project: Path,
     name: Annotated[str, typer.Option()] = "新建筑",
     config: Annotated[Path | None, typer.Option()] = None,
+    minecraft_version: Annotated[str | None, typer.Option(help="项目 Minecraft Java 版本")] = None,
 ) -> None:
-    workbench = Workbench(Settings.load(config))
+    workbench = Workbench(Settings.load(config, minecraft_version=minecraft_version))
     SqliteStore.create(
         project,
         name,
@@ -216,9 +222,19 @@ def serve(
     config: Annotated[Path | None, typer.Option()] = None,
 ) -> None:
     """打开本地三维工作台服务。"""
-    import uvicorn
+    try:
+        import uvicorn
 
-    from design_workbench.interfaces.http import create_app
+        from design_workbench.interfaces.http import create_app
+    except ModuleNotFoundError as error:
+        if error.name not in {"uvicorn", "fastapi", "multipart", "python_multipart", "PIL"}:
+            raise
+        raise WorkbenchError(
+            "GUI_DEPENDENCY_MISSING",
+            "缺少网页服务依赖。源码启动请执行："
+            "uv run --extra gui design-workbench serve --config config.example.toml；"
+            "使用 pip 安装时请安装 minecraft-design-workbench[gui]。",
+        ) from error
 
     uvicorn.run(create_app(Settings.load(config)), host="127.0.0.1", port=port)
 

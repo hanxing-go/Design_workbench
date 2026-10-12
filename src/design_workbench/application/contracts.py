@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, StrictInt, StringConstraints
 
 type Position = tuple[StrictInt, StrictInt, StrictInt]
 
@@ -36,6 +36,17 @@ class SetBlocks(Contract):
     op: Literal["set"]
     complete_beds: bool = False
     blocks: list[PlacedBlock] = Field(min_length=1, max_length=500_000)
+
+
+class Place(Contract):
+    op: Literal["place"]
+    state: StateInput
+    hit: Position
+    normal: Position
+    location: tuple[FiniteFloat, FiniteFloat, FiniteFloat]
+    facing: Literal["north", "east", "south", "west"]
+    group: str = Field(default="main", min_length=1, max_length=128)
+    automatic: bool = True
 
 
 class Fill(Contract):
@@ -124,7 +135,18 @@ class Window(Contract):
 
 
 type Operation = Annotated[
-    SetBlocks | Fill | Delete | Replace | Group | Transform | Array | Extrude | Arc | Roof | Window,
+    Place
+    | SetBlocks
+    | Fill
+    | Delete
+    | Replace
+    | Group
+    | Transform
+    | Array
+    | Extrude
+    | Arc
+    | Roof
+    | Window,
     Field(discriminator="op"),
 ]
 
@@ -133,6 +155,8 @@ class EditRequest(Contract):
     schema_version: Literal[1] = 1
     expected_revision: int = Field(ge=0)
     request_id: str = Field(min_length=1, max_length=128)
+    auto_connect: bool = True
+    complete_structures: bool = True
     operations: list[Operation] = Field(min_length=1, max_length=256)
 
 
@@ -145,7 +169,11 @@ class RenameRequest(HistoryRequest):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 
 
-class CreateRequest(Contract):
+class VersionRequest(Contract):
+    minecraft_version: str | None = Field(default=None, min_length=1, max_length=32)
+
+
+class CreateRequest(VersionRequest):
     name: str = Field(default="新建筑", min_length=1, max_length=128)
     bounds: Box = Field(default_factory=lambda: Box(low=(-512, -64, -512), high=(511, 511, 511)))
 

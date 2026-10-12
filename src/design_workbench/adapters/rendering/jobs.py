@@ -23,9 +23,10 @@ from design_workbench.application.render_contracts import RenderRequest
 from design_workbench.config import Settings
 from design_workbench.domain.errors import WorkbenchError
 from design_workbench.domain.models import Bounds
+from design_workbench.runtime import worker_command
 
 from ..resources.catalog import Catalog
-from ..resources.pack import ResourcePack
+from ..resources.pack import ResourceManager, ResourcePack
 from ..storage.sqlite import SqliteStore
 from .capture_worker import write_json
 
@@ -84,7 +85,18 @@ class RenderJobs:
                 if job.digest != digest:
                     raise WorkbenchError("REQUEST_ID_REUSED", "截图 request_id 已用于另一组参数。")
             else:
-                if self.pack is None:
+                version, data_version = SqliteStore(
+                    project, self.settings.database_timeout
+                ).game_version()
+                catalog = self.catalog if version == self.catalog.version else Catalog(version)
+                if data_version != catalog.data_version:
+                    raise WorkbenchError("VERSION_MISMATCH", "项目游戏版本与 DataVersion 不一致。")
+                pack = (
+                    self.pack
+                    if self.pack is not None and self.pack.manifest["minecraft_version"] == version
+                    else ResourceManager(self.settings.cache_dir / "resources").active(version)
+                )
+                if pack is None:
                     raise WorkbenchError("RESOURCES_NOT_READY", "先通过 resources setup 安装资源。")
                 if len(self.jobs) >= self.settings.max_render_jobs:
                     expired = next(
@@ -114,11 +126,10 @@ class RenderJobs:
                 directory = self.directory / identifier
                 directory.mkdir()
                 job = CaptureJob(
-                    identifier, scene.revision, self.pack.manifest["bundle_hash"], directory, digest
+                    identifier, scene.revision, pack.manifest["bundle_hash"], directory, digest
                 )
                 self.jobs[identifier] = job
                 self.requests[key] = identifier
-                pack = self.pack
 
                 def run() -> None:
                     process: subprocess.Popen[bytes] | None = None
@@ -170,12 +181,10 @@ class RenderJobs:
                             creationflags = subprocess.CREATE_NO_WINDOW
                         with (directory / "worker.log").open("wb") as log:
                             process = subprocess.Popen(
-                                [
-                                    sys.executable,
-                                    "-m",
+                                worker_command(
                                     "design_workbench.adapters.rendering.capture_worker",
                                     str(directory),
-                                ],
+                                ),
                                 stdout=log,
                                 stderr=log,
                                 stdin=subprocess.DEVNULL,

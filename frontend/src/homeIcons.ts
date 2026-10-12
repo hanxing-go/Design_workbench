@@ -6,7 +6,12 @@ const line = (body: string) =>
 const vanillaSprites: Record<string, string> = {
   diamond: 'diamond',
   emerald: 'emerald',
-  pickaxe: 'iron_pickaxe',
+  pickaxe: 'diamond_pickaxe',
+  grass: 'grass_block',
+  crafting: 'crafting_table',
+  chest: 'chest',
+  cabin: 'oak_door',
+  blueprint: 'map',
   book: 'book',
   torch: 'torch',
 };
@@ -20,9 +25,8 @@ export const homeIcons: Record<string, string> = {
     '<path d="M6 1h4v1h2v2h2v3h1v5h-2v2h-3v1H6v-1H3v-2H2V7h1V4h1V2h2Z" fill="#155f62"/><path d="M6 2h4v1h2v2h1v3h1v4h-2v1H5v-1H3V7h1V4h2Z" fill="#26bdb2"/><path d="M6 2h3v1h2v2H6ZM4 5h2v5H4Zm2 0h5v4H6Z" fill="#a9f3e6"/><path d="M6 4h3v1H6Zm-1 3h2v2H5Z" fill="#effff7"/><path d="M6 10h5v2H5v-1h1Zm4-4h2v4h-2Z" fill="#169f99"/><path d="M5 13h6v1H5Z" fill="#59daca"/>',
     '0 0 16 16',
   ),
-  github: line(
-    '<path d="M9 19c-4 1-4-2-6-2m12 5v-4a3.5 3.5 0 0 0-1-3c3-.3 6-1.5 6-6a4.7 4.7 0 0 0-1-3 4.5 4.5 0 0 0 0-3s-1 0-3 1a12 12 0 0 0-8 0C6 3 5 3 5 3a4.5 4.5 0 0 0 0 3 4.7 4.7 0 0 0-1 3c0 4.5 3 5.7 6 6a3.5 3.5 0 0 0-1 3v4"/>',
-  ),
+  github:
+    '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>',
   star: line('<path d="m12 3 2.8 5.6 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.5l6.2-.9Z"/>'),
   code: line('<path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/>'),
   chat: line('<path d="M21 4H3v13h5v4l6-4h7ZM7 8h10M7 12h7"/>'),
@@ -69,8 +73,21 @@ export const homeIcons: Record<string, string> = {
   grid: line('<path d="M3 3h7v7H3Zm11 0h7v7h-7ZM3 14h7v7H3Zm11 0h7v7h-7Z"/>'),
 };
 
+// Resource setup can finish after a page was opened. A failed image request must
+// not leave that tab permanently displaying the simplified SVG illustrations.
+const pendingSprites = new Map<HTMLElement, { retry: () => void; cancel: () => void }>();
+const spriteRetryDelays = [1000, 3000, 10000];
+
+window.addEventListener('focus', retryPendingSprites);
+window.addEventListener('online', retryPendingSprites);
+
+function retryPendingSprites() {
+  pendingSprites.forEach((pending) => pending.retry());
+}
+
 export function hydrateHomeIcons(root: ParentNode = document) {
   root.querySelectorAll<HTMLElement>('[data-icon]').forEach((element) => {
+    pendingSprites.get(element)?.cancel();
     element.innerHTML = homeIcons[element.dataset.icon!] ?? '';
     const sprite = vanillaSprites[element.dataset.icon!];
     if (!sprite) return;
@@ -78,13 +95,36 @@ export function hydrateHomeIcons(root: ParentNode = document) {
     image.alt = '';
     image.className = 'vanilla-sprite';
     image.decoding = 'async';
-    image.hidden = true;
-    image.onload = () => {
-      element.querySelector('svg')?.remove();
-      image.hidden = false;
+    let attempts = 0;
+    let timer = 0;
+    let loading = false;
+    const cancel = () => {
+      clearTimeout(timer);
+      image.onload = image.onerror = null;
+      pendingSprites.delete(element);
     };
-    image.onerror = () => image.remove();
-    image.src = `/api/ui/sprites/${sprite}.png`;
-    element.append(image);
+    const retry = () => {
+      if (!element.isConnected) {
+        cancel();
+        return;
+      }
+      if (loading) return;
+      clearTimeout(timer);
+      loading = true;
+      const refresh = attempts ? `?retry=${Date.now()}` : '';
+      image.src = `/api/ui/sprites/${sprite}.png${refresh}`;
+    };
+    image.onload = () => {
+      cancel();
+      element.replaceChildren(image);
+    };
+    image.onerror = () => {
+      loading = false;
+      if (attempts < spriteRetryDelays.length) {
+        timer = window.setTimeout(retry, spriteRetryDelays[attempts++]);
+      }
+    };
+    pendingSprites.set(element, { retry, cancel });
+    retry();
   });
 }

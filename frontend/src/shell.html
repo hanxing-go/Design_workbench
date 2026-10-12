@@ -1,19 +1,7 @@
 <header>
   <a class="workbench-home-link" href="/" aria-label="返回首页" title="返回首页">⌂</a>
   <div class="brand">
-    <span class="brand-mark" aria-hidden="true"
-      ><svg viewBox="0 0 32 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M16 1 31 9v18l-15 8L1 27V9Z" fill="#10150d" />
-        <path d="m16 3 13 7-13 7L3 10Z" fill="#8cb859" />
-        <path d="m3 12 12 7v13L3 25Z" fill="#795135" />
-        <path d="m17 19 12-7v13l-12 7Z" fill="#523a2b" />
-        <path d="m3 12 12 7v5l-4-2v-3l-4-2v3l-4-2Z" fill="#669343" />
-        <path d="m17 19 12-7v5l-4 2v3l-4 2v-3l-4 2Z" fill="#44682e" />
-        <path d="m9 8 5-3 4 2-5 3Z" fill="#b1cd7f" />
-        <path d="m19 10 4-2 4 2-4 2Z" fill="#659746" />
-        <path d="m6 23 3 2v3l-3-2Zm5 3 2 1v3l-2-1Z" fill="#aa7950" />
-        <path d="m20 26 3-2v3l-3 2Z" fill="#78543a" /></svg
-    ></span>
+    <span class="brand-mark" data-icon="grass" aria-hidden="true"></span>
     <div><strong>Design Workbench</strong><small>MINECRAFT · 建筑设计工作台</small></div>
   </div>
   <div class="project-bar">
@@ -213,6 +201,7 @@
       <h3>结构检查</h3>
       <button id="check">检查部件与连接</button>
       <p id="check-result" class="muted">检查门、床、楼梯与常见连接块。</p>
+      <ul id="check-issues" class="consistency-issues" hidden></ul>
       <button id="apply-rules" hidden>预览规范化建议</button>
     </section>
     <section>

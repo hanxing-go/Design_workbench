@@ -38,6 +38,8 @@ export interface Atlas {
 }
 export type RenderCell = [number, number, number, string, string, boolean];
 export interface Summary {
+  minecraft_version: string;
+  data_version: number;
   id: string;
   name: string;
   revision: number;

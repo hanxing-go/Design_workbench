@@ -2,12 +2,25 @@ import './style.css';
 import './home.css';
 import './sponsor.css';
 import sponsor from './sponsor.html?raw';
+import stevePickaxeUrl from './assets/steve-pickaxe.png';
 import { hydrateHomeIcons } from './homeIcons';
 import { sponsorConfig } from './sponsor.config';
+import { initMinecraftUI } from './minecraftUI';
+import './sponsorChest.css';
 
 const root = document.querySelector<HTMLDivElement>('#app')!;
 root.className = 'home-mode sponsor-mode';
-root.innerHTML = sponsor;
+root.innerHTML = sponsor.replace('__STEVE_PICKAXE_URL__', stevePickaxeUrl);
+initMinecraftUI();
+
+const chest = document.getElementById('community-chest') as HTMLButtonElement;
+let chestPinned = false;
+chest.onclick = () => {
+  chestPinned = !chestPinned;
+  chest.classList.toggle('is-open', chestPinned);
+  chest.setAttribute('aria-pressed', String(chestPinned));
+  chest.setAttribute('aria-label', chestPinned ? '合上社区宝箱' : '打开社区宝箱');
+};
 document.title = '赞助支持 · Design Workbench';
 document
   .querySelector('meta[name="description"]')

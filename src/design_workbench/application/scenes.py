@@ -59,6 +59,11 @@ class SceneService:
     def edit(self, request: EditRequest, preview: bool = False) -> dict[str, Any]:
         started = time.perf_counter()
         body = request.model_dump(mode="json", exclude_none=True, by_alias=True)
+        # Omit the default flag to keep pre-existing idempotency keys replayable.
+        if body.get("auto_connect") is True:
+            body.pop("auto_connect")
+        if body.get("complete_structures") is True:
+            body.pop("complete_structures")
         # Preserve the v0.1.0 request digest when the new optional behavior is off.
         for operation in body["operations"]:
             if operation.get("complete_beds") is False:
@@ -73,7 +78,12 @@ class SceneService:
             raise WorkbenchError(
                 "REVISION_CONFLICT", "场景已被修改，请重新读取。", revision=scene.revision
             )
-        plan = self.editor.plan(scene, body["operations"])
+        plan = self.editor.plan(
+            scene,
+            body["operations"],
+            auto_connect=request.auto_connect,
+            complete_structures=request.complete_structures,
+        )
         if preview:
             return {
                 "revision": scene.revision,

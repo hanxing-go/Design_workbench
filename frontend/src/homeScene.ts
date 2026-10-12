@@ -29,7 +29,7 @@ const HOLD_SECONDS = 10;
 const DISMANTLE_SECONDS = 5;
 const CYCLE_SECONDS = BUILD_SECONDS + HOLD_SECONDS + DISMANTLE_SECONDS + 1;
 
-// All textures are drawn locally, so the landing scene also works before resource setup.
+// A local fallback keeps the scene available before vanilla resources are installed.
 function pixelTexture(kind: BlockKind | 'grass-side' | 'log-top'): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 16;
@@ -177,6 +177,40 @@ function pixelTexture(kind: BlockKind | 'grass-side' | 'log-top'): THREE.CanvasT
   const texture = new THREE.CanvasTexture(canvas);
   texture.magFilter = texture.minFilter = THREE.NearestFilter;
   texture.colorSpace = THREE.SRGBColorSpace;
+  const vanilla: Partial<Record<BlockKind | 'grass-side' | 'log-top', string>> = {
+    grass: 'grass_block_top',
+    'grass-side': 'grass_block_side',
+    dirt: 'dirt',
+    stone: 'stone',
+    brick: 'stone_bricks',
+    planks: 'oak_planks',
+    log: 'oak_log',
+    beam: 'oak_log',
+    'log-top': 'oak_log_top',
+    roof: 'spruce_planks',
+    tile: 'dark_prismarine',
+    leaves: 'oak_leaves',
+    cherry: 'cherry_leaves',
+    water: 'water_still',
+    path: 'dirt_path_top',
+    canvas: 'white_wool',
+    'red-wool': 'red_wool',
+    copper: 'copper_block',
+    crystal: 'amethyst_block',
+    'dark-stone': 'deepslate_tiles',
+    wheat: 'hay_block_side',
+  };
+  if (vanilla[kind]) {
+    const image = new Image();
+    image.onload = () => {
+      if (texture.userData.disposed) return;
+      ctx.clearRect(0, 0, 16, 16);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(image, 0, 0, image.width, image.width, 0, 0, 16, 16);
+      texture.needsUpdate = true;
+    };
+    image.src = `/api/ui/sprites/${vanilla[kind]}.png`;
+  }
   return texture;
 }
 
@@ -584,7 +618,10 @@ export class HomeScene {
           material.dispose();
       }
     });
-    for (const texture of this.textures.values()) texture.dispose();
+    for (const texture of this.textures.values()) {
+      texture.userData.disposed = true;
+      texture.dispose();
+    }
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

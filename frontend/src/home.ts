@@ -1,15 +1,21 @@
 import './style.css';
 import './home.css';
 import home from './home.html?raw';
+import buildersUrl from './assets/builders.png';
 import { hydrateHomeIcons } from './homeIcons';
+import { initMinecraftUI } from './minecraftUI';
+import './homeWorkshop.css';
+import { clearProjectPreviews, observeProjectPreview } from './projectPreviews';
 import type { Summary } from './types';
 
-type HomeProject = Summary & { project_id: string };
+type HomeProject = Summary & { project_id: string; events?: { created: string }[] };
 type Info = { minecraft_version: string; resources_ready: boolean };
+type Versions = { default: string; items: Info[] };
 const root = document.querySelector<HTMLDivElement>('#app')!;
 root.className = 'home-mode';
-root.innerHTML = home;
+root.innerHTML = home.replace('__BUILDERS_URL__', buildersUrl);
 hydrateHomeIcons();
+initMinecraftUI();
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const createDialog = el<HTMLDialogElement>('home-create-dialog');
 const guideDialog = el<HTMLDialogElement>('home-guide-dialog');
@@ -20,6 +26,45 @@ let loading = false;
 let starter = false;
 let noticeTimer = 0;
 let info: Info | null = null;
+let versions: Info[] = [];
+const versionSelect = el<HTMLSelectElement>('home-minecraft-version');
+
+function updateResourceStatus() {
+  const ready = versions.find(
+    (item) => item.minecraft_version === versionSelect.value,
+  )?.resources_ready;
+  el('home-resource-status').textContent = ready
+    ? '此版本素材已就绪。'
+    : '首次使用此版本，请下载官方素材；之后可离线建造。';
+  el<HTMLButtonElement>('home-resources-setup').disabled = loading || !!ready;
+}
+versionSelect.onchange = updateResourceStatus;
+el('home-resources-setup').onclick = async () => {
+  if (loading) return;
+  loading = true;
+  versionSelect.disabled = true;
+  el<HTMLButtonElement>('home-create-submit').disabled = true;
+  updateResourceStatus();
+  el('home-resource-status').textContent = '正在下载官方素材并生成图集，请稍候…';
+  try {
+    const result = await api<Info>('/api/resources/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ minecraft_version: versionSelect.value }),
+    });
+    const item = versions.find((item) => item.minecraft_version === result.minecraft_version);
+    if (item) item.resources_ready = result.resources_ready;
+    el('home-create-error').textContent = '';
+  } catch (error) {
+    el('home-create-error').textContent =
+      error instanceof Error ? error.message : '素材下载失败，请重试。';
+  } finally {
+    loading = false;
+    versionSelect.disabled = false;
+    el<HTMLButtonElement>('home-create-submit').disabled = false;
+    updateResourceStatus();
+  }
+};
 
 function notice(text: string, error = false) {
   const output = el('home-notice');
@@ -31,7 +76,10 @@ function notice(text: string, error = false) {
 }
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(path, options);
+  const response = await fetch(path, {
+    signal: !options?.method || options.method === 'GET' ? AbortSignal.timeout(20000) : undefined,
+    ...options,
+  });
   const data = await response.json();
   if (!response.ok)
     throw new Error(data.error?.message ?? data.detail ?? `请求失败 (${response.status})`);
@@ -59,6 +107,7 @@ function readRecents(): Record<string, number> {
 }
 
 function renderProjects() {
+  clearProjectPreviews();
   const query = el<HTMLInputElement>('home-search').value.trim().toLocaleLowerCase();
   const matching = projects.filter((project) => project.name.toLocaleLowerCase().includes(query));
   el('home-project-count').textContent = String(projects.length);
@@ -72,23 +121,40 @@ function renderProjects() {
       card.href = `?project=${encodeURIComponent(project.project_id)}`;
       const art = document.createElement('span');
       art.className = 'project-art';
-      art.dataset.icon = project.blocks ? 'cabin' : 'blueprint';
+      art.textContent = project.blocks ? '正在生成建筑预览…' : '空白画布 · 从第一个方块开始';
+      if (!project.blocks) art.classList.add('preview-unavailable');
       art.setAttribute('aria-hidden', 'true');
       const content = document.createElement('div');
       const title = document.createElement('strong');
       title.textContent = project.name;
       const details = document.createElement('small');
-      details.textContent = `${project.blocks.toLocaleString()} 个方块 · 修订 ${project.revision}`;
-      content.append(title, details);
+      details.textContent = `${project.blocks.toLocaleString()} 个方块 · Java ${project.minecraft_version}`;
+      const edited = document.createElement('small');
+      const date = project.events?.[0]?.created;
+      const timestamp = date ? Date.parse(date) : NaN;
+      edited.textContent = Number.isFinite(timestamp)
+        ? `最近编辑 ${new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(timestamp)}`
+        : '尚未编辑 · 等待你的灵感';
+      if (date) edited.title = new Date(date).toLocaleString('zh-CN');
+      content.append(title, details, edited);
       const arrow = document.createElement('span');
       arrow.className = 'project-arrow';
-      arrow.textContent = '↗';
+      arrow.textContent = '继续建造 →';
       arrow.setAttribute('aria-hidden', 'true');
       card.append(art, content, arrow);
+      if (project.blocks) observeProjectPreview(art, project.project_id, project.revision);
       return card;
     }),
   );
-  hydrateHomeIcons(el('home-projects'));
+  if (projects.length && !query) {
+    const create = document.createElement('button');
+    create.className = 'project-create-tile';
+    create.type = 'button';
+    create.innerHTML =
+      '<span class="project-create-plus" aria-hidden="true">＋</span><strong>下一个世界，等你创造</strong><span>新建设计，从第一个方块开始</span><span class="project-create-label">开始建造 →</span>';
+    create.onclick = () => showCreate();
+    el('home-projects').append(create);
+  }
 }
 
 function showCreate(cabin = false) {
@@ -97,6 +163,7 @@ function showCreate(cabin = false) {
   nameInput.value = cabin ? '我的林间小屋' : '';
   el('home-create-title').textContent = cabin ? '从一间小屋开始' : '给你的灵感起个名字';
   el('home-create-error').textContent = '';
+  updateResourceStatus();
   createDialog.showModal();
   nameInput.focus();
 }
@@ -139,12 +206,15 @@ el<HTMLFormElement>('home-create-form').onsubmit = async (event) => {
   submit.disabled = true;
   submit.textContent = '正在准备你的世界…';
   try {
+    info = await api<Info>(
+      `/api/info?minecraft_version=${encodeURIComponent(versionSelect.value)}`,
+    );
     if (info && !info.resources_ready)
-      throw new Error('方块素材尚未配置，请先完成本地资源设置再开始建造。');
+      throw new Error('此版本素材尚未配置，请点击「下载所选版本的官方素材」。');
     const project = await api<HomeProject>('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, minecraft_version: versionSelect.value }),
     });
     openProject(project.project_id, starter);
   } catch (error) {
@@ -181,12 +251,21 @@ fileInput.onchange = async () => {
   });
   notice(`正在导入「${file.name}」…`);
   try {
-    if (info && !info.resources_ready) throw new Error('方块素材尚未配置，请先完成本地资源设置。');
+    const probe = new FormData();
+    probe.set('file', file);
+    const blueprint = await api<Info>('/api/blueprints/info', { method: 'POST', body: probe });
+    if (!blueprint.resources_ready) {
+      versionSelect.value = blueprint.minecraft_version;
+      throw new Error(
+        `蓝图使用 Java ${blueprint.minecraft_version}。请在「开始建造」中下载此版本素材，再导入。`,
+      );
+    }
     const project = await api<HomeProject>('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: file.name.replace(/\.litematic$/i, '').slice(0, 128) || '导入的建筑',
+        minecraft_version: blueprint.minecraft_version,
       }),
     });
     // Keep the newly created project visible if an invalid blueprint cannot be imported.
@@ -213,6 +292,11 @@ fileInput.onchange = async () => {
 };
 
 el<HTMLInputElement>('home-search').oninput = renderProjects;
+el('home-clear-search').onclick = () => {
+  el<HTMLInputElement>('home-search').value = '';
+  renderProjects();
+  el('home-search').focus();
+};
 el('design-toggle').onclick = () => {
   const button = el('design-toggle');
   const list = el('home-projects').classList.toggle('is-list');
@@ -236,41 +320,83 @@ el('home-next-tip').onclick = () => {
 };
 
 async function loadHomeData() {
-  const results = await Promise.allSettled([
-    api<Info>('/api/info'),
-    api<{ items: HomeProject[]; errors?: unknown[] }>('/api/projects'),
-  ]);
+  clearProjectPreviews();
+  el('home-projects').setAttribute('aria-busy', 'true');
+  el('home-projects').innerHTML =
+    '<span class="projects-loading sr-only">正在读取你的设计…</span>' +
+    '<div class="project-skeleton" aria-hidden="true"></div>'.repeat(3);
+  // Library, connection, and version discovery settle independently.
+  void api<Versions>('/api/versions')
+    .then((result) => {
+      const selected = versionSelect.value;
+      versions = result.items;
+      versionSelect.replaceChildren(
+        ...versions.map(
+          (item) =>
+            new Option(
+              `Java ${item.minecraft_version}${item.resources_ready ? ' · 素材已安装' : ''}`,
+              item.minecraft_version,
+            ),
+        ),
+      );
+      versionSelect.value = versions.some((item) => item.minecraft_version === selected)
+        ? selected
+        : result.default;
+      updateResourceStatus();
+    })
+    .catch(() => {
+      if (!versions.length)
+        el('home-resource-status').textContent = '版本列表暂不可用，请重新连接本地工作台。';
+    });
   const connection = el('home-connection');
-  if (results[0].status === 'fulfilled') {
-    info = results[0].value;
-    el('home-version').textContent = `JAVA ${info.minecraft_version}`;
-    connection.replaceChildren();
-    connection.append(
-      document.createElement('i'),
-      document.createTextNode(
-        info.resources_ready ? '本地工作台已连接' : '已连接 · 待配置方块素材',
-      ),
-    );
-    connection.classList.toggle('is-offline', !info.resources_ready);
-  } else {
-    connection.replaceChildren();
-    connection.append(document.createElement('i'), document.createTextNode('本地服务未连接'));
-    connection.classList.add('is-offline');
-  }
-  if (results[1].status === 'fulfilled') {
+  void api<Info>('/api/info')
+    .then((result) => {
+      info = result;
+      if (!versions.length) {
+        versions = [result];
+        versionSelect.replaceChildren(
+          new Option(`Java ${result.minecraft_version}`, result.minecraft_version),
+        );
+        updateResourceStatus();
+      }
+      el('home-version').textContent = `JAVA ${result.minecraft_version}`;
+      connection.replaceChildren(
+        document.createElement('i'),
+        document.createTextNode(
+          result.resources_ready ? '本地工作台已连接' : '已连接 · 待配置方块素材',
+        ),
+      );
+      connection.classList.toggle('is-offline', !result.resources_ready);
+    })
+    .catch(() => {
+      connection.replaceChildren(
+        document.createElement('i'),
+        document.createTextNode('本地服务未连接'),
+      );
+      connection.classList.add('is-offline');
+    });
+  try {
+    const result = await api<{ items: HomeProject[]; errors?: unknown[] }>('/api/projects');
     const recents = readRecents();
-    projects = results[1].value.items.sort(
-      (a, b) => (recents[b.project_id] ?? 0) - (recents[a.project_id] ?? 0),
+    projects = result.items.sort(
+      (a, b) =>
+        (recents[b.project_id] ?? (Date.parse(b.events?.[0]?.created ?? '') || 0)) -
+        (recents[a.project_id] ?? (Date.parse(a.events?.[0]?.created ?? '') || 0)),
     );
     renderProjects();
-    if (results[1].value.errors?.length) notice('部分设计暂时无法读取，其余设计已显示。', true);
-  } else {
+    if (result.errors?.length) notice('部分设计暂时无法读取，其余设计已显示。', true);
+  } catch {
     el('home-projects').replaceChildren();
     const error = document.createElement('p');
-    error.className = 'projects-loading';
-    error.textContent = '暂时无法读取设计。请检查本地工作台服务，刷新后重试。';
+    error.className = 'projects-error';
+    error.textContent = '暂时无法读取设计，请确认本地工作台已启动。';
+    const retry = document.createElement('button');
+    retry.textContent = '重新连接';
+    retry.onclick = () => void loadHomeData();
+    error.append(retry);
     el('home-projects').append(error);
   }
+  el('home-projects').setAttribute('aria-busy', 'false');
 }
 void loadHomeData();
 window.addEventListener('pageshow', (event) => {

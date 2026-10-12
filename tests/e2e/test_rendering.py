@@ -71,6 +71,8 @@ def test_special_block_scene_transparency_and_thumbnails(tmp_path: Path) -> None
                 json={
                     "expected_revision": 0,
                     "request_id": "sample",
+                    "auto_connect": False,
+                    "complete_structures": False,
                     "operations": [{"op": "set", "blocks": blocks}],
                 },
             )
@@ -153,6 +155,7 @@ def test_special_block_scene_transparency_and_thumbnails(tmp_path: Path) -> None
                 )
                 page.locator("#search").fill("blue_bed")
                 page.locator('.material-card[data-name="minecraft:blue_bed"]').click()
+                page.locator(".material-advanced summary").click()
                 page.locator('select[data-property="part"]').select_option("foot")
                 page.locator('select[data-property="facing"]').select_option("north")
                 page.locator('[data-tool="place"]').click()

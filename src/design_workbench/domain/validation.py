@@ -1,15 +1,15 @@
-from .editing import VECTORS, partner
+from .editing import partner
 from .models import BlockState, Cell, Point, Scene
+from .neighbors import VECTORS, add, chest_updates, connected_state, full_face
+from .placement import missing_supports
 
 
-def add(point: Point, vector: Point) -> Point:
-    return point[0] + vector[0], point[1] + vector[1], point[2] + vector[2]
-
-
-def inspect_consistency(scene: Scene) -> dict[str, object]:
+def inspect_consistency(scene: Scene, registry: object | None = None) -> dict[str, object]:
     issues: list[dict[str, object]] = []
     proposals: list[dict[str, object]] = []
     cells = scene.cells
+    missing_parts: dict[Point, tuple[BlockState, Cell] | None] = {}
+    paired_chests = chest_updates(set(cells), cells)
     for point, cell in cells.items():
         state = cell.state
         properties = dict(state.properties)
@@ -24,18 +24,42 @@ def inspect_consistency(scene: Scene) -> dict[str, object]:
                         "message": "门、床或高植物缺少对应部件。",
                     }
                 )
+                if (
+                    other is None
+                    and scene.bounds.contains(other_position)
+                    and point not in scene.protected
+                    and other_position not in scene.protected
+                ):
+                    counterpart = dict(properties)
+                    key, values = (
+                        ("half", {"lower": "upper", "upper": "lower"})
+                        if "half" in properties
+                        else ("part", {"foot": "head", "head": "foot"})
+                    )
+                    counterpart[key] = values[properties[key]]
+                    expected = BlockState.make(state.name, counterpart)
+                    normalize = getattr(registry, "normalize", None)
+                    if callable(normalize):
+                        expected = normalize(expected)
+                    if other_position in missing_parts:
+                        missing_parts[other_position] = None
+                    else:
+                        missing_parts[other_position] = (expected, cell)
             else:
                 counterpart = dict(other.state.properties)
-                expected_opposite = (
+                key, values = (
                     ("half", {"lower": "upper", "upper": "lower"})
                     if "half" in properties
                     else ("part", {"foot": "head", "head": "foot"})
                 )
-                key, values = expected_opposite
-                if counterpart.get(key) != values.get(properties.get(key, "")) or any(
-                    properties.get(k) != counterpart.get(k)
-                    for k in ("facing", "open", "hinge")
-                    if k in properties
+                if (
+                    partner(other_position, other) != point
+                    or counterpart.get(key) != values.get(properties.get(key, ""))
+                    or any(
+                        properties.get(k) != counterpart.get(k)
+                        for k in ("facing", "open", "hinge")
+                        if k in properties
+                    )
                 ):
                     issues.append(
                         {
@@ -44,94 +68,43 @@ def inspect_consistency(scene: Scene) -> dict[str, object]:
                             "message": "多格部件的状态不一致。",
                         }
                     )
-        replacement = dict(properties)
-        supported = False
-        if (
-            state.name.endswith(("_fence", "_pane"))
-            or state.name == "minecraft:iron_bars"
-            or state.name.endswith("_wall")
+        replacement = paired_chests.get(point) or connected_state(point, cells, registry)
+        if point in paired_chests and any(
+            add(point, vector) in scene.protected for vector in VECTORS.values()
         ):
-            supported = True
-            for direction, vector in VECTORS.items():
-                neighbour = cells.get(add(point, vector))
-                connect = neighbour is not None and (
-                    neighbour.state.name == state.name or is_simple_solid(neighbour)
-                )
-                if state.name.endswith("_wall"):
-                    replacement[direction] = "low" if connect else "none"
-                else:
-                    replacement[direction] = "true" if connect else "false"
-            if state.name.endswith("_wall"):
-                connections = {d for d in VECTORS if replacement[d] != "none"}
-                replacement["up"] = (
-                    "false" if connections in ({"north", "south"}, {"east", "west"}) else "true"
-                )
-        elif state.name.endswith("_stairs"):
-            supported = True
-            facing = properties.get("facing", "north")
-            order = ("north", "east", "south", "west")
-            shape = "straight"
-            vector = VECTORS[facing]
-            front, back = (
-                cells.get(add(point, vector)),
-                cells.get(add(point, (-vector[0], -vector[1], -vector[2]))),
-            )
-            for neighbour, prefix in ((front, "outer"), (back, "inner")):
-                if neighbour and neighbour.state.name.endswith("_stairs"):
-                    neighbour_props = dict(neighbour.state.properties)
-                    other_facing = neighbour_props.get("facing", facing)
-                    if (
-                        neighbour_props.get("half") == properties.get("half")
-                        and (order.index(other_facing) - order.index(facing)) % 2
-                    ):
-                        blocking_direction = (
-                            order[(order.index(other_facing) + 2) % 4]
-                            if prefix == "outer"
-                            else other_facing
-                        )
-                        blocking = cells.get(add(point, VECTORS[blocking_direction]))
-                        blocking_props = dict(blocking.state.properties) if blocking else {}
-                        if (
-                            not blocking
-                            or not blocking.state.name.endswith("_stairs")
-                            or blocking_props.get("facing") != facing
-                            or blocking_props.get("half") != properties.get("half")
-                        ):
-                            left = other_facing == order[(order.index(facing) - 1) % 4]
-                            shape = prefix + ("_left" if left else "_right")
-                            break
-            replacement["shape"] = shape
-        if supported and replacement != properties:
+            replacement = None
+        if replacement is not None and point not in scene.protected:
             proposals.append(
+                {"position": point, "state": replacement.as_dict(), "group": cell.group}
+            )
+
+        # Report support loss without simulating destructive game physics in a
+        # design editor. Imported/floating art stays intact until explicitly edited.
+        unsupported = missing_supports(cells, point, state, registry)
+        if unsupported:
+            issues.append(
                 {
                     "position": point,
-                    "state": BlockState.make(state.name, replacement).as_dict(),
-                    "group": cell.group,
+                    "code": "MISSING_SUPPORT",
+                    "supports": unsupported,
+                    "message": "方块的支撑面已缺失；保留当前设计，可手动移除或补上支撑。",
                 }
             )
+    proposals.extend(
+        {"position": point, "state": candidate[0].as_dict(), "group": candidate[1].group}
+        for point, candidate in missing_parts.items()
+        if candidate is not None
+    )
     return {
         "revision": scene.revision,
         "issues": issues,
         "proposals": proposals,
-        "rules": "doors/beds/tall plants; stairs; basic fence/pane/wall neighbours",
-        "limitations": [
-            "不模拟游戏物理",
-            "连接检查仅覆盖相同连接块与普通完整实心块；墙高形状及特殊邻接需游戏核对",
-        ],
+        "rules": "doors/beds/tall plants; stairs; panes/bars; fence families/gates; walls; attachment support",
+        "limitations": ["不模拟游戏物理、流体、红石更新；附着物失去支撑时仅提示"],
         "requires_confirmation": True,
     }
 
 
 def is_simple_solid(cell: Cell) -> bool:
-    name = cell.state.name.split(":", 1)[-1]
-    return name in {
-        "stone",
-        "cobblestone",
-        "bricks",
-        "dirt",
-        "grass_block",
-        "sandstone",
-        "quartz_block",
-        "smooth_quartz",
-        "stone_bricks",
-    } or name.endswith(("_planks", "_log", "_wood", "_concrete", "_wool"))
+    """Compatibility wrapper for callers of the previous consistency helper."""
+    return full_face(cell, "north")

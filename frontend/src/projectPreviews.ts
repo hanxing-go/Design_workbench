@@ -91,10 +91,14 @@ async function snapshot(packet: Packet, id: string) {
   const meshes: THREE.InstancedMesh[] = [];
   try {
     if (!renderer) {
-      renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer = new THREE.WebGLRenderer({
+        alpha: true,
+        antialias: true,
+        preserveDrawingBuffer: true,
+      });
       renderer.setPixelRatio(1);
       renderer.setSize(560, 300, false);
-      renderer.setClearColor('#202820');
+      renderer.setClearColor('#202820', 0);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
     }
     scene.add(new THREE.AmbientLight(0xffffff, 2));

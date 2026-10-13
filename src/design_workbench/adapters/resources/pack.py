@@ -27,7 +27,11 @@ def publish_directory(temporary: Path, destination: Path) -> None:
             temporary.rename(destination)
             return
         except PermissionError as error:
-            if os.name != "nt" or error.winerror not in {5, 32, 33} or attempt == 9:
+            if (
+                os.name != "nt"
+                or getattr(error, "winerror", None) not in {5, 32, 33}
+                or attempt == 9
+            ):
                 raise
             time.sleep(0.1 * (attempt + 1))
 

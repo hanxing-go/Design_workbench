@@ -83,6 +83,10 @@ def test_wall_snap_manual_override_painting_history_and_export(tmp_path: Path) -
             def material(name: str) -> None:
                 page.locator("#search").fill(name)
                 page.locator(f'.material-card[data-name="minecraft:{name}"]').click()
+                page.wait_for_function(
+                    "name => !window.workbench.busy && document.getElementById('material-id').textContent === 'minecraft:' + name",
+                    arg=name,
+                )
                 page.locator('[data-tool="place"]').click()
 
             def click_wall(x: int, y: int) -> None:

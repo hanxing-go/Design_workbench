@@ -10,7 +10,7 @@ import httpx
 import nbtlib
 import pytest
 from PIL import Image
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 from design_workbench.adapters.formats.litematic import Litematic
 
@@ -157,7 +157,12 @@ def test_special_block_scene_transparency_and_thumbnails(tmp_path: Path) -> None
                 page.locator('.material-card[data-name="minecraft:blue_bed"]').click()
                 page.locator(".material-advanced summary").click()
                 page.locator('select[data-property="part"]').select_option("foot")
+                expect(page.locator(".material-advanced")).to_have_attribute("open", "")
+                expect(page.locator('select[data-property="part"]')).to_have_value("foot")
                 page.locator('select[data-property="facing"]').select_option("north")
+                expect(page.locator(".material-advanced")).to_have_attribute("open", "")
+                expect(page.locator('select[data-property="part"]')).to_have_value("foot")
+                expect(page.locator('select[data-property="facing"]')).to_have_value("north")
                 page.locator("#automatic-placement").uncheck()
                 page.locator('[data-tool="place"]').click()
                 click = page.evaluate("""() => {

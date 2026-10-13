@@ -1,5 +1,5 @@
 const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/homeScene-BskHhR8t.js","assets/three.module-BKyUEcGm.js"])))=>i.map(i=>d[i]);
-import{_ as ae}from"./main-B5l7SAB3.js";import{h as B,i as se}from"./minecraftUI-Cl_zRL2Y.js";/* empty css             */import{s as oe,N as re,f as G,n as ie,W as ce,A as de,l as le,r as pe,D as he,I as ue,h as me,t as fe,V as k,O as be,b as ve,m as ge,B as ye,F as U}from"./three.module-BKyUEcGm.js";import"./modulepreload-polyfill-B5Qt9EMX.js";const we=`<div class="home-topline" aria-hidden="true"></div>
+import{_ as ae}from"./main-DjXMoCcY.js";import{h as B,i as se}from"./minecraftUI-Cl_zRL2Y.js";/* empty css             */import{s as oe,N as re,f as G,n as ie,W as ce,A as de,l as le,r as pe,D as he,I as ue,h as me,t as fe,V as k,O as be,b as ve,m as ge,B as ye,F as U}from"./three.module-BKyUEcGm.js";import"./modulepreload-polyfill-B5Qt9EMX.js";const we=`<div class="home-topline" aria-hidden="true"></div>
 <header class="home-header">
   <a class="brand home-brand" href="/" aria-label="Design Workbench 首页">
     <span class="brand-mark" data-icon="grass" aria-hidden="true"></span>

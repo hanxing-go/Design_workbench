@@ -60,7 +60,7 @@ export class MaterialControls {
   private material: Material | null = null;
   private state: State = { name: '', properties: {} };
   private generation = 0;
-  private advancedOpen = false;
+  private advanced: HTMLDetailsElement | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -72,7 +72,7 @@ export class MaterialControls {
     this.material = material;
     this.state = state;
     this.automatic = true;
-    this.advancedOpen = false;
+    this.advanced = null;
     this.draw();
   }
 
@@ -86,6 +86,8 @@ export class MaterialControls {
   private draw() {
     if (!this.material) return;
     const material = this.material;
+    // Toggle events are queued, so capture the current panel state before replacing it.
+    const advancedOpen = this.advanced?.open ?? false;
     const generation = ++this.generation;
     const mode = document.createElement('label');
     mode.className = 'placement-mode';
@@ -162,10 +164,8 @@ export class MaterialControls {
 
     const advanced = document.createElement('details');
     advanced.className = 'material-advanced';
-    advanced.open = this.advancedOpen;
-    advanced.ontoggle = () => {
-      this.advancedOpen = advanced.open;
-    };
+    advanced.open = advancedOpen;
+    this.advanced = advanced;
     const summary = document.createElement('summary');
     summary.textContent = '高级属性';
     advanced.append(summary);

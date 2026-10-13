@@ -1,5 +1,7 @@
 """Local Windows launcher; resources and projects stay outside the application bundle."""
 
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -8,12 +10,10 @@ import socket
 import sys
 import threading
 import time
-import tkinter as tk
 import webbrowser
 from contextlib import suppress
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
 import uvicorn
 
@@ -21,6 +21,9 @@ from design_workbench.adapters.resources.acquire import fetch_official
 from design_workbench.bootstrap import Workbench
 from design_workbench.config import Settings
 from design_workbench.interfaces.http import create_app
+
+if TYPE_CHECKING:
+    import tkinter as tk
 
 
 def desktop_settings(directory: Path) -> Settings:
@@ -80,6 +83,9 @@ def local_socket() -> socket.socket:
 
 class Launcher:
     def __init__(self, root: tk.Tk, settings: Settings, lock: InstanceLock) -> None:
+        import tkinter as tk
+        from tkinter import ttk
+
         self.root, self.settings, self.lock = root, settings, lock
         self.events: queue.Queue[tuple[str, str]] = queue.Queue()
         self.busy = False
@@ -133,6 +139,8 @@ class Launcher:
             os.startfile(self.settings.data_dir)
 
     def choose_jar(self) -> None:
+        from tkinter import filedialog
+
         selected = filedialog.askopenfilename(
             title="选择 Minecraft Java 1.20.1 客户端", filetypes=[("客户端", "*.jar")]
         )
@@ -195,6 +203,8 @@ class Launcher:
         self.thread.start()
 
     def poll(self) -> None:
+        from tkinter import messagebox
+
         try:
             while True:
                 event, value = self.events.get_nowait()
@@ -238,10 +248,14 @@ class Launcher:
         self.root.after(100, self.poll)
 
     def open_browser(self) -> None:
+        from tkinter import messagebox
+
         if not webbrowser.open(self.url):
             messagebox.showinfo("打开工作台", f"请在浏览器中打开：{self.url}", parent=self.root)
 
     def close(self) -> None:
+        from tkinter import messagebox
+
         if self.busy:
             messagebox.showinfo("正在准备素材", "请等待素材处理完成后退出。", parent=self.root)
             return
@@ -260,6 +274,9 @@ class Launcher:
 
 
 def main() -> None:
+    import tkinter as tk
+    from tkinter import messagebox
+
     root = tk.Tk()
     root.withdraw()
     lock: InstanceLock | None = None

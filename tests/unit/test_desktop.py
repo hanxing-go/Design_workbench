@@ -1,5 +1,7 @@
 import contextlib
+import subprocess
 import sys
+import textwrap
 import time
 from pathlib import Path
 
@@ -7,6 +9,38 @@ import pytest
 
 from design_workbench.interfaces.desktop import desktop_settings, local_socket
 from design_workbench.runtime import worker_command
+
+
+def test_desktop_helpers_work_without_tkinter(tmp_path: Path) -> None:
+    script = textwrap.dedent(
+        """
+        import importlib.abc
+        import sys
+        from pathlib import Path
+
+        class BlockTkinter(importlib.abc.MetaPathFinder):
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname == "tkinter" or fullname.startswith("tkinter."):
+                    raise ModuleNotFoundError("tkinter is unavailable", name=fullname)
+                return None
+
+        sys.meta_path.insert(0, BlockTkinter())
+        from design_workbench.interfaces.desktop import desktop_settings, local_socket
+
+        directory = Path(sys.argv[1])
+        (directory / "portable.flag").touch()
+        settings = desktop_settings(directory)
+        assert settings.data_dir == directory / "userdata" / "data"
+        with local_socket() as listener:
+            assert listener.getsockname()[0] == "127.0.0.1"
+            assert listener.getsockname()[1] > 0
+        assert "tkinter" not in sys.modules
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_portable_paths_survive_relocation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
